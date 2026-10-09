@@ -33,4 +33,8 @@ pub enum StreamError {
     AlreadyFinalized = 11,
     /// Checked arithmetic overflowed or underflowed.
     MathOverflow = 12,
+    /// `create_stream` was called while the contract is paused. Withdrawals
+    /// and cancellations are never blocked by a pause, so funds already in
+    /// streams can always be reached.
+    Paused = 13,
 }

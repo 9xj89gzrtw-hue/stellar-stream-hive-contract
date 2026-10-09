@@ -62,7 +62,9 @@ pub fn set_stream_balance(env: &Env, stream_id: u64, amount: i128) {
 }
 
 pub fn get_stream_token(env: &Env, stream_id: u64) -> Option<Address> {
-    env.storage().persistent().get(&DataKey::StreamToken(stream_id))
+    env.storage()
+        .persistent()
+        .get(&DataKey::StreamToken(stream_id))
 }
 
 pub fn set_stream_token(env: &Env, stream_id: u64, token: &Address) {

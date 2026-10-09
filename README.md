@@ -56,7 +56,7 @@ instructions are in [CONTRIBUTING.md](CONTRIBUTING.md).
 git clone https://github.com/Stellar-Hive/stellar-stream-hive-contract.git
 cd stellar-stream-hive-contract
 
-# Run the full test suite (30+ tests across all three contracts)
+# Run the full test suite (75+ tests across all three contracts)
 cargo test
 
 # Build the real deployment artifacts

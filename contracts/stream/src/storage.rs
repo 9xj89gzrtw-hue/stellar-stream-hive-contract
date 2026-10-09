@@ -11,6 +11,7 @@ pub enum DataKey {
     Admin,
     Vault,
     NextStreamId,
+    Paused,
     Stream(u64),
     SenderStreams(Address),
     RecipientStreams(Address),
@@ -31,6 +32,20 @@ pub fn get_admin(env: &Env) -> Option<Address> {
     env.storage().instance().get(&DataKey::Admin)
 }
 
+pub fn is_paused(env: &Env) -> bool {
+    env.storage()
+        .instance()
+        .get(&DataKey::Paused)
+        .unwrap_or(false)
+}
+
+pub fn set_paused(env: &Env, paused: bool) {
+    env.storage().instance().set(&DataKey::Paused, &paused);
+    env.storage()
+        .instance()
+        .extend_ttl(LEDGER_THRESHOLD, LEDGER_BUMP);
+}
+
 pub fn set_vault(env: &Env, vault: &Address) {
     env.storage().instance().set(&DataKey::Vault, vault);
     env.storage()
@@ -44,7 +59,11 @@ pub fn get_vault(env: &Env) -> Option<Address> {
 
 /// Allocates and returns the next stream id (starting at 1).
 pub fn next_stream_id(env: &Env) -> u64 {
-    let current: u64 = env.storage().instance().get(&DataKey::NextStreamId).unwrap_or(0);
+    let current: u64 = env
+        .storage()
+        .instance()
+        .get(&DataKey::NextStreamId)
+        .unwrap_or(0);
     let next = current + 1;
     env.storage().instance().set(&DataKey::NextStreamId, &next);
     next

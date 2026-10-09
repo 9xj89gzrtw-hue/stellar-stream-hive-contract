@@ -8,7 +8,14 @@
 //! `Client` would call it under the hood.
 use soroban_sdk::{vec, Address, Env, IntoVal, Symbol};
 
-pub fn deposit(env: &Env, vault: &Address, from: &Address, token: &Address, amount: i128, stream_id: u64) {
+pub fn deposit(
+    env: &Env,
+    vault: &Address,
+    from: &Address,
+    token: &Address,
+    amount: i128,
+    stream_id: u64,
+) {
     let args = vec![
         env,
         from.into_val(env),

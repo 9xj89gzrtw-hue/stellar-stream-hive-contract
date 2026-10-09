@@ -13,6 +13,8 @@ pub struct Create {
     pub total_amount: i128,
     pub start_ledger: u32,
     pub end_ledger: u32,
+    pub cliff_ledger: u32,
+    pub cancellable: bool,
 }
 
 #[contractevent(data_format = "vec")]
@@ -30,4 +32,23 @@ pub struct Cancel {
     pub sender: Address,
     pub streamed_now: i128,
     pub remainder: i128,
+}
+
+/// Emitted when the admin pauses new stream creation.
+#[contractevent(data_format = "vec")]
+pub struct Pause {
+    pub admin: Address,
+}
+
+/// Emitted when the admin resumes new stream creation.
+#[contractevent(data_format = "vec")]
+pub struct Unpause {
+    pub admin: Address,
+}
+
+/// Emitted when the admin role is handed to a new address.
+#[contractevent(data_format = "vec")]
+pub struct AdminTransfer {
+    pub previous_admin: Address,
+    pub new_admin: Address,
 }

@@ -58,12 +58,15 @@ pub fn set_record(env: &Env, record: &StreamRecord) {
 }
 
 pub fn get_stats(env: &Env) -> RegistryStats {
-    env.storage().instance().get(&DataKey::Stats).unwrap_or(RegistryStats {
-        total_streams: 0,
-        active_streams: 0,
-        total_streamed: 0,
-        total_withdrawn: 0,
-    })
+    env.storage()
+        .instance()
+        .get(&DataKey::Stats)
+        .unwrap_or(RegistryStats {
+            total_streams: 0,
+            active_streams: 0,
+            total_streamed: 0,
+            total_withdrawn: 0,
+        })
 }
 
 pub fn set_stats(env: &Env, stats: &RegistryStats) {

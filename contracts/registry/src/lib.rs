@@ -22,8 +22,8 @@
 mod error;
 mod events;
 mod storage;
-mod types;
 mod test;
+mod types;
 
 use error::RegistryError;
 use soroban_sdk::{contract, contractimpl, Address, Env, Vec};
@@ -114,7 +114,8 @@ impl RegistryContract {
         if withdrawn < 0 {
             return Err(RegistryError::InvalidAmount);
         }
-        let mut record = storage::get_record(&env, stream_id).ok_or(RegistryError::StreamNotFound)?;
+        let mut record =
+            storage::get_record(&env, stream_id).ok_or(RegistryError::StreamNotFound)?;
 
         let mut stats = storage::get_stats(&env);
 
@@ -144,7 +145,11 @@ impl RegistryContract {
         storage::set_record(&env, &record);
         storage::set_stats(&env, &stats);
 
-        events::Update { stream_id, withdrawn }.publish(&env);
+        events::Update {
+            stream_id,
+            withdrawn,
+        }
+        .publish(&env);
         Ok(())
     }
 

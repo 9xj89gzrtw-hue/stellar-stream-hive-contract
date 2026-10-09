@@ -65,7 +65,8 @@ pub fn withdrawable_amount(stream: &Stream, now: u32) -> Result<i128, StreamErro
     // Even a cancelled stream that never reached its cliff should not be
     // withdrawable, since the recipient never earned anything before the
     // cliff — evaluate the cliff against the ledger the stream stopped at.
-    if stream.status == StreamStatus::Cancelled && stream.cancelled_at_ledger < stream.cliff_ledger {
+    if stream.status == StreamStatus::Cancelled && stream.cancelled_at_ledger < stream.cliff_ledger
+    {
         return Ok(0);
     }
 
@@ -212,5 +213,54 @@ mod tests {
         // MathOverflow error, never a raw arithmetic panic.
         let s = make_stream(&env, 0, 7, 0, i128::MAX);
         assert_eq!(streamed_amount(&s, 3), Err(StreamError::MathOverflow));
+    }
+
+    #[test]
+    fn streamed_is_monotonic_non_decreasing_in_time() {
+        let env = Env::default();
+        // Awkward, non-divisible parameters stress the rounding.
+        let s = make_stream(&env, 7, 1_009, 7, 999_999_937);
+        let mut prev = 0;
+        for now in 0..=1_100u32 {
+            let amt = streamed_amount(&s, now).unwrap();
+            assert!(amt >= prev, "streamed went backwards at ledger {now}");
+            assert!(amt <= s.total_amount);
+            prev = amt;
+        }
+        assert_eq!(prev, s.total_amount);
+    }
+
+    #[test]
+    fn withdrawable_plus_withdrawn_never_exceeds_total() {
+        let env = Env::default();
+        let mut s = make_stream(&env, 0, 997, 0, 1_000_003);
+        for now in (0..=1_200u32).step_by(13) {
+            let w = withdrawable_amount(&s, now).unwrap();
+            assert!(w >= 0);
+            assert!(s.withdrawn + w <= s.total_amount);
+            // Withdraw everything available, as a greedy recipient would.
+            s.withdrawn += w;
+        }
+        // A fully-drained stream pays out exactly the deposit, no more.
+        assert_eq!(s.withdrawn, s.total_amount);
+    }
+
+    #[test]
+    fn rounding_always_favours_the_vault_never_the_recipient() {
+        let env = Env::default();
+        let s = make_stream(&env, 0, 3, 0, 10);
+        // 10 over 3 ledgers: 3, 6, 10 -- integer division rounds down.
+        assert_eq!(streamed_amount(&s, 1).unwrap(), 3);
+        assert_eq!(streamed_amount(&s, 2).unwrap(), 6);
+        assert_eq!(streamed_amount(&s, 3).unwrap(), 10);
+    }
+
+    #[test]
+    fn cancelled_before_cliff_leaves_nothing_withdrawable() {
+        let env = Env::default();
+        let mut s = make_stream(&env, 0, 1000, 500, 1_000_000);
+        s.status = StreamStatus::Cancelled;
+        s.cancelled_at_ledger = 300;
+        assert_eq!(withdrawable_amount(&s, 9_999).unwrap(), 0);
     }
 }

@@ -7,6 +7,25 @@ on:
     branches: [main]
 
 jobs:
+  lint:
+    name: Lint (fmt, clippy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      # too_many_arguments / needless_borrows_for_generic_args are inherent to
+      # Soroban's ABI-driven function signatures and client call style.
+      - name: Clippy
+        run: >
+          cargo clippy --workspace --all-targets -- -D warnings
+          -A clippy::too_many_arguments
+          -A clippy::needless_borrows_for_generic_args
+
   test:
     name: Test (native)
     runs-on: ubuntu-latest

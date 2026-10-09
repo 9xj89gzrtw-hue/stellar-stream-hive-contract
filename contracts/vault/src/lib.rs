@@ -29,7 +29,11 @@ impl VaultContract {
     /// One-time setup. Records the admin (who may later repoint the
     /// authorized stream contract) and the stream contract allowed to move
     /// funds held by this vault.
-    pub fn initialize(env: Env, admin: Address, stream_contract: Address) -> Result<(), VaultError> {
+    pub fn initialize(
+        env: Env,
+        admin: Address,
+        stream_contract: Address,
+    ) -> Result<(), VaultError> {
         if storage::has_admin(&env) {
             return Err(VaultError::AlreadyInitialized);
         }
@@ -102,7 +106,15 @@ impl VaultContract {
         amount: i128,
         stream_id: u64,
     ) -> Result<(), VaultError> {
-        Self::authorize_and_pay(&env, caller, to, token, amount, stream_id, PayoutKind::Release)
+        Self::authorize_and_pay(
+            &env,
+            caller,
+            to,
+            token,
+            amount,
+            stream_id,
+            PayoutKind::Release,
+        )
     }
 
     /// Refunds `amount` of `token` from `stream_id`'s locked balance to
@@ -119,7 +131,15 @@ impl VaultContract {
         amount: i128,
         stream_id: u64,
     ) -> Result<(), VaultError> {
-        Self::authorize_and_pay(&env, caller, to, token, amount, stream_id, PayoutKind::Refund)
+        Self::authorize_and_pay(
+            &env,
+            caller,
+            to,
+            token,
+            amount,
+            stream_id,
+            PayoutKind::Refund,
+        )
     }
 
     /// Locked balance currently attributed to `stream_id`.
@@ -135,7 +155,11 @@ impl VaultContract {
     /// Admin-only: repoints the single contract address authorized to call
     /// `release` / `refund`. Useful for upgrading the stream contract
     /// without redeploying the vault (and re-migrating custodied funds).
-    pub fn set_stream_contract(env: Env, admin: Address, new_contract: Address) -> Result<(), VaultError> {
+    pub fn set_stream_contract(
+        env: Env,
+        admin: Address,
+        new_contract: Address,
+    ) -> Result<(), VaultError> {
         let stored_admin = storage::get_admin(&env).ok_or(VaultError::NotInitialized)?;
         admin.require_auth();
         if admin != stored_admin {
@@ -176,7 +200,8 @@ impl VaultContract {
             return Err(VaultError::InvalidAmount);
         }
 
-        let stream_contract = storage::get_stream_contract(env).ok_or(VaultError::NotInitialized)?;
+        let stream_contract =
+            storage::get_stream_contract(env).ok_or(VaultError::NotInitialized)?;
 
         // 1. The caller must cryptographically prove they are who they say.
         caller.require_auth();

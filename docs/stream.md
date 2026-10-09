@@ -148,16 +148,43 @@ Read-only, with `status` recomputed live.
 ### `get_streams_by_sender(env, sender) -> Vec<Stream>` / `get_streams_by_recipient(env, recipient) -> Vec<Stream>`
 Read-only, indexed lookups.
 
+### `count_streams_by_sender(env, sender) -> u32` / `count_streams_by_recipient(env, recipient) -> u32`
+Read-only. Number of streams ever created for that party.
+
+### `get_streams_by_sender_page(env, sender, offset, limit) -> Vec<Stream>` / `get_streams_by_recipient_page(env, recipient, offset, limit) -> Vec<Stream>`
+Read-only, creation-ordered pages. `limit` is capped at `MAX_PAGE_SIZE`
+(50) so a single call can never be forced to hydrate an unbounded number of
+streams; an `offset` past the end returns an empty vec. Prefer these over
+`get_streams_by_*` for any address that may accumulate many streams.
+
 ### `get_status(env, stream_id) -> StreamStatus`
 Read-only, live-computed status.
+
+### `pause(env)` / `unpause(env)` / `is_paused(env) -> bool`
+`pause` and `unpause` require the admin's authorization. While paused,
+`create_stream` fails with `Paused`. **Pausing never blocks `withdraw`,
+`withdraw_max` or `cancel_stream`** -- it is an emergency brake on new
+deposits, not a way to trap funds that are already streaming.
+
+### `transfer_admin(env, new_admin)`
+Requires authorization from **both** the current admin and `new_admin`, so
+the role cannot be handed to an address nobody controls by mistake.
 
 ## Events
 
 | Topic | Payload | Emitted when |
 |---|---|---|
-| `("create", stream_id)` | `(sender, recipient, token, total_amount, start_ledger, end_ledger)` | `create_stream` succeeds |
+| `("create", stream_id)` | `(sender, recipient, token, total_amount, start_ledger, end_ledger, cliff_ledger, cancellable)` | `create_stream` succeeds |
 | `("withdraw", stream_id)` | `(recipient, amount)` | `withdraw` (or `withdraw_max`) succeeds |
 | `("cancel", stream_id)` | `(sender, streamed_now, remainder)` | `cancel_stream` succeeds |
+| `("pause")` | `(admin)` | `pause` succeeds |
+| `("unpause")` | `(admin)` | `unpause` succeeds |
+| `("admin_transfer")` | `(previous_admin, new_admin)` | `transfer_admin` succeeds |
+
+The `create` event carries every field an off-chain indexer needs to
+reconstruct the stream (including `cliff_ledger` and `cancellable`), so
+[the API](https://github.com/Stellar-Hive/stellar-stream-hive-api) never has
+to make a follow-up contract read per stream.
 
 ## Cross-contract calls to the vault
 
@@ -171,6 +198,24 @@ tests use the real vault contract (via a `dev-dependency` on the vault
 crate, only active for `cargo test`, never for the WASM release build) so
 the full deposit → withdraw → release path is tested end-to-end.
 
+## Errors
+
+| Code | Name | Meaning |
+|---|---|---|
+| 1 | `AlreadyInitialized` | `initialize` called twice |
+| 2 | `NotInitialized` | called before `initialize` |
+| 3 | `Unauthorized` | caller is not the stream's sender/recipient |
+| 4 | `InvalidAmount` | amount was zero or negative |
+| 5 | `InvalidTimeRange` | `end_ledger <= start_ledger` |
+| 6 | `InvalidCliff` | cliff outside `[start_ledger, end_ledger]` |
+| 7 | `StreamNotFound` | no stream with that id |
+| 8 | `BeforeCliff` | withdrawal before the cliff |
+| 9 | `ExceedsWithdrawable` | amount above `withdrawable_amount` |
+| 10 | `NotCancellable` | stream created with `cancellable = false` |
+| 11 | `AlreadyFinalized` | stream already cancelled or completed |
+| 12 | `MathOverflow` | checked arithmetic overflowed |
+| 13 | `Paused` | `create_stream` while the contract is paused |
+
 ## Security notes
 
 - Every state-changing function that acts on behalf of a specific party
@@ -180,6 +225,9 @@ the full deposit → withdraw → release path is tested end-to-end.
 - The contract additionally checks that the authenticated address matches
   the stream's recorded `sender`/`recipient` — `require_auth()` alone only
   proves identity, not authorization for a specific stream.
+- `pause` can only stop *new* streams; existing recipients can always
+  withdraw and existing senders can always cancel (covered by
+  `test_pause_never_traps_existing_streams`).
 - All balance arithmetic uses checked i128 operations; overflow/underflow
   returns `StreamError::MathOverflow` instead of panicking or wrapping.
 - The contract can never cause the vault to pay out more than a stream's

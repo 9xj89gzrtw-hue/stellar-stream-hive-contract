@@ -22,6 +22,10 @@ mod vault_client;
 
 use error::StreamError;
 use soroban_sdk::{contract, contractimpl, Address, Env, Vec};
+
+/// Upper bound on the page size accepted by the paginated queries, so a
+/// single call can never be forced to hydrate an unbounded number of streams.
+pub const MAX_PAGE_SIZE: u32 = 50;
 use types::{Stream, StreamStatus};
 
 #[contract]
@@ -56,6 +60,9 @@ impl StreamContract {
     ) -> Result<u64, StreamError> {
         sender.require_auth();
 
+        if storage::is_paused(&env) {
+            return Err(StreamError::Paused);
+        }
         if total_amount <= 0 {
             return Err(StreamError::InvalidAmount);
         }
@@ -99,6 +106,8 @@ impl StreamContract {
             total_amount,
             start_ledger,
             end_ledger,
+            cliff_ledger,
+            cancellable,
         }
         .publish(&env);
 
@@ -122,7 +131,12 @@ impl StreamContract {
 
     /// The recipient withdraws `amount` (up to `withdrawable_amount`) from
     /// their stream.
-    pub fn withdraw(env: Env, recipient: Address, stream_id: u64, amount: i128) -> Result<(), StreamError> {
+    pub fn withdraw(
+        env: Env,
+        recipient: Address,
+        stream_id: u64,
+        amount: i128,
+    ) -> Result<(), StreamError> {
         recipient.require_auth();
         if amount <= 0 {
             return Err(StreamError::InvalidAmount);
@@ -268,6 +282,82 @@ impl StreamContract {
         Ok(math::compute_status(&stream, now))
     }
 
+    /// Number of streams ever created with `sender` as the sender.
+    pub fn count_streams_by_sender(env: Env, sender: Address) -> u32 {
+        storage::get_sender_streams(&env, &sender).len()
+    }
+
+    /// Number of streams ever created with `recipient` as the recipient.
+    pub fn count_streams_by_recipient(env: Env, recipient: Address) -> u32 {
+        storage::get_recipient_streams(&env, &recipient).len()
+    }
+
+    /// A page of `sender`'s streams in creation order. `limit` is capped at
+    /// [`MAX_PAGE_SIZE`]; an `offset` past the end returns an empty vec.
+    pub fn get_streams_by_sender_page(
+        env: Env,
+        sender: Address,
+        offset: u32,
+        limit: u32,
+    ) -> Vec<Stream> {
+        let ids = storage::get_sender_streams(&env, &sender);
+        Self::hydrate(&env, &Self::slice(&env, &ids, offset, limit))
+    }
+
+    /// A page of `recipient`'s streams in creation order. See
+    /// [`Self::get_streams_by_sender_page`] for the paging rules.
+    pub fn get_streams_by_recipient_page(
+        env: Env,
+        recipient: Address,
+        offset: u32,
+        limit: u32,
+    ) -> Vec<Stream> {
+        let ids = storage::get_recipient_streams(&env, &recipient);
+        Self::hydrate(&env, &Self::slice(&env, &ids, offset, limit))
+    }
+
+    /// Admin only. Blocks `create_stream` until [`Self::unpause`] is called.
+    /// Deliberately does NOT block `withdraw`, `withdraw_max` or
+    /// `cancel_stream`: pausing is an emergency brake on new deposits, never
+    /// a way to trap funds that are already streaming.
+    pub fn pause(env: Env) -> Result<(), StreamError> {
+        let admin = storage::get_admin(&env).ok_or(StreamError::NotInitialized)?;
+        admin.require_auth();
+        storage::set_paused(&env, true);
+        events::Pause { admin }.publish(&env);
+        Ok(())
+    }
+
+    /// Admin only. Re-enables `create_stream`.
+    pub fn unpause(env: Env) -> Result<(), StreamError> {
+        let admin = storage::get_admin(&env).ok_or(StreamError::NotInitialized)?;
+        admin.require_auth();
+        storage::set_paused(&env, false);
+        events::Unpause { admin }.publish(&env);
+        Ok(())
+    }
+
+    /// Whether new stream creation is currently paused.
+    pub fn is_paused(env: Env) -> bool {
+        storage::is_paused(&env)
+    }
+
+    /// Admin only. Hands the admin role to `new_admin`. Both the current
+    /// admin and the new admin must authorize, so the role can never be
+    /// transferred to an address nobody controls by mistake.
+    pub fn transfer_admin(env: Env, new_admin: Address) -> Result<(), StreamError> {
+        let admin = storage::get_admin(&env).ok_or(StreamError::NotInitialized)?;
+        admin.require_auth();
+        new_admin.require_auth();
+        storage::set_admin(&env, &new_admin);
+        events::AdminTransfer {
+            previous_admin: admin,
+            new_admin,
+        }
+        .publish(&env);
+        Ok(())
+    }
+
     /// Read-only accessor for the admin address.
     pub fn get_admin(env: Env) -> Result<Address, StreamError> {
         storage::get_admin(&env).ok_or(StreamError::NotInitialized)
@@ -280,6 +370,20 @@ impl StreamContract {
 }
 
 impl StreamContract {
+    fn slice(env: &Env, ids: &Vec<u64>, offset: u32, limit: u32) -> Vec<u64> {
+        let limit = core::cmp::min(limit, MAX_PAGE_SIZE);
+        let end = core::cmp::min(offset.saturating_add(limit), ids.len());
+        let mut out = Vec::new(env);
+        let mut i = offset;
+        while i < end {
+            if let Some(id) = ids.get(i) {
+                out.push_back(id);
+            }
+            i += 1;
+        }
+        out
+    }
+
     fn hydrate(env: &Env, ids: &Vec<u64>) -> Vec<Stream> {
         let now = env.ledger().sequence();
         let mut out = Vec::new(env);

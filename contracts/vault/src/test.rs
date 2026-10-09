@@ -1,10 +1,7 @@
 #![cfg(test)]
 
 use crate::{VaultContract, VaultContractClient};
-use soroban_sdk::{
-    testutils::Address as _,
-    token, Address, Env,
-};
+use soroban_sdk::{testutils::Address as _, token, Address, Env};
 
 struct TestCtx {
     env: Env,
@@ -105,8 +102,13 @@ fn test_release_by_stream_contract_succeeds() {
     ctx.token_sac.mint(&depositor, &1_000);
     ctx.vault.deposit(&depositor, &ctx.token_address, &500, &1);
 
-    ctx.vault
-        .release(&ctx.stream_contract, &recipient, &ctx.token_address, &200, &1);
+    ctx.vault.release(
+        &ctx.stream_contract,
+        &recipient,
+        &ctx.token_address,
+        &200,
+        &1,
+    );
 
     assert_eq!(ctx.token.balance(&recipient), 200);
     assert_eq!(ctx.vault.balance_of_stream(&1), 300);
@@ -139,8 +141,13 @@ fn test_release_rejects_amount_exceeding_balance() {
     ctx.token_sac.mint(&depositor, &1_000);
     ctx.vault.deposit(&depositor, &ctx.token_address, &100, &1);
 
-    ctx.vault
-        .release(&ctx.stream_contract, &recipient, &ctx.token_address, &101, &1);
+    ctx.vault.release(
+        &ctx.stream_contract,
+        &recipient,
+        &ctx.token_address,
+        &101,
+        &1,
+    );
 }
 
 #[test]
@@ -176,7 +183,8 @@ fn test_refund_rejects_non_stream_contract_caller() {
 fn test_set_stream_contract_by_admin() {
     let ctx = setup();
     let new_stream_contract = Address::generate(&ctx.env);
-    ctx.vault.set_stream_contract(&ctx.admin, &new_stream_contract);
+    ctx.vault
+        .set_stream_contract(&ctx.admin, &new_stream_contract);
     assert_eq!(ctx.vault.get_stream_contract(), new_stream_contract);
 }
 
@@ -186,7 +194,8 @@ fn test_set_stream_contract_rejects_non_admin() {
     let ctx = setup();
     let attacker = Address::generate(&ctx.env);
     let new_stream_contract = Address::generate(&ctx.env);
-    ctx.vault.set_stream_contract(&attacker, &new_stream_contract);
+    ctx.vault
+        .set_stream_contract(&attacker, &new_stream_contract);
 }
 
 #[test]
@@ -198,7 +207,8 @@ fn test_old_stream_contract_loses_access_after_repoint() {
     ctx.vault.deposit(&depositor, &ctx.token_address, &500, &1);
 
     let new_stream_contract = Address::generate(&ctx.env);
-    ctx.vault.set_stream_contract(&ctx.admin, &new_stream_contract);
+    ctx.vault
+        .set_stream_contract(&ctx.admin, &new_stream_contract);
 
     // The old stream contract address must now be rejected.
     let result = ctx.vault.try_release(
@@ -211,8 +221,13 @@ fn test_old_stream_contract_loses_access_after_repoint() {
     assert!(result.is_err());
 
     // The new one works.
-    ctx.vault
-        .release(&new_stream_contract, &recipient, &ctx.token_address, &100, &1);
+    ctx.vault.release(
+        &new_stream_contract,
+        &recipient,
+        &ctx.token_address,
+        &100,
+        &1,
+    );
     assert_eq!(ctx.token.balance(&recipient), 100);
 }
 
@@ -226,8 +241,13 @@ fn test_total_locked_tracks_multiple_streams() {
     ctx.vault.deposit(&depositor, &ctx.token_address, &200, &2);
     assert_eq!(ctx.vault.total_locked(&ctx.token_address), 500);
 
-    ctx.vault
-        .release(&ctx.stream_contract, &depositor, &ctx.token_address, &100, &1);
+    ctx.vault.release(
+        &ctx.stream_contract,
+        &depositor,
+        &ctx.token_address,
+        &100,
+        &1,
+    );
     assert_eq!(ctx.vault.total_locked(&ctx.token_address), 400);
 }
 
@@ -240,7 +260,9 @@ fn test_deposit_rejects_token_mismatch_for_existing_stream() {
     ctx.vault.deposit(&depositor, &ctx.token_address, &100, &1);
 
     let other_admin = Address::generate(&ctx.env);
-    let other_sac = ctx.env.register_stellar_asset_contract_v2(other_admin.clone());
+    let other_sac = ctx
+        .env
+        .register_stellar_asset_contract_v2(other_admin.clone());
     let other_token = other_sac.address();
     let other_client = token::StellarAssetClient::new(&ctx.env, &other_token);
     other_client.mint(&depositor, &1_000);
