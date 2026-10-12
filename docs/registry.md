@@ -63,7 +63,15 @@ Updates a stream's withdrawn amount and status, adjusting
 `StreamNotFound` if the id was never registered.
 
 ### `get_all_streams(env) -> Vec<u64>`
-Every registered stream id, in registration order.
+Every registered stream id, in registration order. Reads one ledger entry
+per stream, so on a large registry prefer the paged accessors below.
+
+### `stream_count(env) -> u32`
+Number of streams ever registered.
+
+### `get_streams_page(env, offset, limit) -> Vec<u64>`
+A registration-ordered page of ids. `limit` is capped at `MAX_PAGE_SIZE`
+(50); an `offset` past the end returns an empty vec.
 
 ### `get_stats(env) -> RegistryStats`
 The current aggregate snapshot.
@@ -114,6 +122,9 @@ exactly; it is a straightforward, backwards-incompatible follow-up.
 ## Storage layout
 
 - `Admin` — instance storage.
-- `AllStreamIds` — persistent storage, `Vec<u64>` of every registered id.
+- `StreamCount` — instance storage, number of registered streams.
+- `StreamIdAt(index)` — persistent storage, the id registered at that index.
+  One entry per stream (rather than one growing `Vec`) keeps registration
+  O(1) and well clear of the ledger-entry size limit.
 - `Record(stream_id)` — persistent storage, that stream's `StreamRecord`.
 - `Stats` — instance storage, the current `RegistryStats`.

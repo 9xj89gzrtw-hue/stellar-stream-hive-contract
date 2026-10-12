@@ -29,6 +29,9 @@ use error::RegistryError;
 use soroban_sdk::{contract, contractimpl, Address, Env, Vec};
 pub use types::{RegistryStats, StreamRecord, StreamStatus};
 
+/// Upper bound on the number of ids a single `get_streams_page` call returns.
+pub const MAX_PAGE_SIZE: u32 = 50;
+
 #[contract]
 pub struct RegistryContract;
 
@@ -154,8 +157,23 @@ impl RegistryContract {
     }
 
     /// All registered stream ids, in registration order.
+    ///
+    /// Reads one ledger entry per stream, so on a large registry this can
+    /// exceed Soroban's per-transaction resource limits. Prefer
+    /// [`Self::get_streams_page`] and [`Self::stream_count`].
     pub fn get_all_streams(env: Env) -> Vec<u64> {
         storage::get_all_stream_ids(&env)
+    }
+
+    /// Number of streams ever registered.
+    pub fn stream_count(env: Env) -> u32 {
+        storage::get_stream_count(&env)
+    }
+
+    /// A page of stream ids in registration order. `limit` is capped at
+    /// [`MAX_PAGE_SIZE`]; an `offset` past the end returns an empty vec.
+    pub fn get_streams_page(env: Env, offset: u32, limit: u32) -> Vec<u64> {
+        storage::get_stream_ids_page(&env, offset, core::cmp::min(limit, MAX_PAGE_SIZE))
     }
 
     /// Protocol-wide aggregate statistics.

@@ -9,7 +9,10 @@ const LEDGER_BUMP: u32 = 241_920; // ~14 days at 5s ledgers
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DataKey {
     Admin,
-    AllStreamIds,
+    /// Number of registered streams (instance storage).
+    StreamCount,
+    /// The id registered at a given registration index (persistent storage).
+    StreamIdAt(u32),
     Record(u64),
     Stats,
 }
@@ -29,20 +32,49 @@ pub fn get_admin(env: &Env) -> Option<soroban_sdk::Address> {
     env.storage().instance().get(&DataKey::Admin)
 }
 
-pub fn get_all_stream_ids(env: &Env) -> Vec<u64> {
+pub fn get_stream_count(env: &Env) -> u32 {
     env.storage()
-        .persistent()
-        .get(&DataKey::AllStreamIds)
-        .unwrap_or_else(|| vec![env])
+        .instance()
+        .get(&DataKey::StreamCount)
+        .unwrap_or(0)
 }
 
+/// Ids are stored one ledger entry per registration index rather than in a
+/// single growing `Vec`, so registering a stream is O(1) and can never hit
+/// the ledger-entry size limit no matter how many streams exist.
 pub fn add_stream_id(env: &Env, stream_id: u64) {
-    let mut ids = get_all_stream_ids(env);
-    ids.push_back(stream_id);
-    env.storage().persistent().set(&DataKey::AllStreamIds, &ids);
+    let index = get_stream_count(env);
+    let key = DataKey::StreamIdAt(index);
+    env.storage().persistent().set(&key, &stream_id);
     env.storage()
         .persistent()
-        .extend_ttl(&DataKey::AllStreamIds, LEDGER_THRESHOLD, LEDGER_BUMP);
+        .extend_ttl(&key, LEDGER_THRESHOLD, LEDGER_BUMP);
+
+    env.storage()
+        .instance()
+        .set(&DataKey::StreamCount, &(index + 1));
+    env.storage()
+        .instance()
+        .extend_ttl(LEDGER_THRESHOLD, LEDGER_BUMP);
+}
+
+/// Ids in registration order, starting at `offset`, at most `limit` of them.
+pub fn get_stream_ids_page(env: &Env, offset: u32, limit: u32) -> Vec<u64> {
+    let count = get_stream_count(env);
+    let end = offset.saturating_add(limit).min(count);
+    let mut out = vec![env];
+    let mut index = offset;
+    while index < end {
+        if let Some(id) = env.storage().persistent().get(&DataKey::StreamIdAt(index)) {
+            out.push_back(id);
+        }
+        index += 1;
+    }
+    out
+}
+
+pub fn get_all_stream_ids(env: &Env) -> Vec<u64> {
+    get_stream_ids_page(env, 0, get_stream_count(env))
 }
 
 pub fn get_record(env: &Env, stream_id: u64) -> Option<StreamRecord> {

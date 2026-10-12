@@ -202,3 +202,97 @@ fn test_reactivating_a_stream_increments_active_count() {
     ctx.registry.update_stream(&1, &0, &StreamStatus::Active);
     assert_eq!(ctx.registry.get_stats().active_streams, 1);
 }
+
+#[test]
+fn test_stream_count_tracks_registrations() {
+    let ctx = setup();
+    assert_eq!(ctx.registry.stream_count(), 0);
+    register_n(&ctx, 3);
+    assert_eq!(ctx.registry.stream_count(), 3);
+}
+
+#[test]
+fn test_get_streams_page_returns_registration_order_slices() {
+    let ctx = setup();
+    register_n(&ctx, 10);
+
+    let first = ctx.registry.get_streams_page(&0, &4);
+    assert_eq!(first.len(), 4);
+    assert_eq!(first.get(0).unwrap(), 100);
+    assert_eq!(first.get(3).unwrap(), 103);
+
+    // a window that overlaps the end is truncated, not padded
+    let tail = ctx.registry.get_streams_page(&8, &4);
+    assert_eq!(tail.len(), 2);
+    assert_eq!(tail.get(0).unwrap(), 108);
+    assert_eq!(tail.get(1).unwrap(), 109);
+}
+
+#[test]
+fn test_get_streams_page_past_the_end_is_empty() {
+    let ctx = setup();
+    register_n(&ctx, 3);
+    assert_eq!(ctx.registry.get_streams_page(&3, &10).len(), 0);
+    assert_eq!(ctx.registry.get_streams_page(&u32::MAX, &u32::MAX).len(), 0);
+    assert_eq!(ctx.registry.get_streams_page(&0, &0).len(), 0);
+}
+
+#[test]
+fn test_get_streams_page_caps_limit_at_max_page_size() {
+    let ctx = setup();
+    register_n(&ctx, 60);
+    let page = ctx.registry.get_streams_page(&0, &1_000);
+    assert_eq!(page.len(), crate::MAX_PAGE_SIZE);
+    // the next page picks up exactly where the capped one stopped
+    let next = ctx.registry.get_streams_page(&crate::MAX_PAGE_SIZE, &1_000);
+    assert_eq!(next.len(), 10);
+    assert_eq!(next.get(0).unwrap(), 100 + u64::from(crate::MAX_PAGE_SIZE));
+}
+
+#[test]
+fn test_paging_through_everything_matches_get_all_streams() {
+    let ctx = setup();
+    register_n(&ctx, 120);
+
+    let mut paged = soroban_sdk::Vec::<u64>::new(&ctx.env);
+    let mut offset = 0;
+    loop {
+        let page = ctx
+            .registry
+            .get_streams_page(&offset, &crate::MAX_PAGE_SIZE);
+        if page.is_empty() {
+            break;
+        }
+        offset += page.len();
+        paged.append(&page);
+    }
+    assert_eq!(paged, ctx.registry.get_all_streams());
+    assert_eq!(paged.len(), 120);
+}
+
+#[test]
+fn test_duplicate_registration_does_not_grow_the_index() {
+    let ctx = setup();
+    register_n(&ctx, 2);
+    let (sender, recipient, token) = (
+        Address::generate(&ctx.env),
+        Address::generate(&ctx.env),
+        Address::generate(&ctx.env),
+    );
+    assert!(ctx
+        .registry
+        .try_register_stream(&100, &sender, &recipient, &token, &1)
+        .is_err());
+    assert_eq!(ctx.registry.stream_count(), 2);
+}
+
+/// Registers `n` streams with ids 100, 101, ... for paging tests.
+fn register_n(ctx: &TestCtx, n: u64) {
+    let sender = Address::generate(&ctx.env);
+    let recipient = Address::generate(&ctx.env);
+    let token = Address::generate(&ctx.env);
+    for i in 0..n {
+        ctx.registry
+            .register_stream(&(100 + i), &sender, &recipient, &token, &1000);
+    }
+}

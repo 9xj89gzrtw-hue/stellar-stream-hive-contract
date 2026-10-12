@@ -23,6 +23,11 @@ All notable changes to the Stellar Stream Hive contracts. Format follows
 - `SECURITY.md` with a private disclosure process.
 
 ### Changed
+- **Registry:** stream ids are now stored one ledger entry per registration
+  index (`StreamCount` + `StreamIdAt`) instead of a single growing `Vec`, so
+  registration stays O(1) and cannot hit the ledger-entry size limit. Added
+  `stream_count` and `get_streams_page` (page size capped at 50). Storage
+  layout change: only safe before a first deployment.
 - **Stream:** the `create` event now also carries `cliff_ledger` and
   `cancellable`, so an indexer can rebuild a stream from events alone.
   **Breaking for event consumers** -- the API repo is updated to match.
