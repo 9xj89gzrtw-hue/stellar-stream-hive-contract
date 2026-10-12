@@ -17,13 +17,20 @@ use crate::types::{Stream, StreamStatus};
 /// If the stream has been cancelled, `now` is ignored in favor of the
 /// ledger at which it was cancelled (`stream.cancelled_at_ledger`), so a
 /// cancelled stream's streamed amount is frozen forever at the value it
-/// held the instant it was cancelled.
+/// held the instant it was cancelled. A stream cancelled *before its cliff*
+/// is frozen at zero: the recipient earned nothing, and the sender is
+/// refunded the whole deposit.
 pub fn streamed_amount(stream: &Stream, now: u32) -> Result<i128, StreamError> {
     let effective_now = if stream.status == StreamStatus::Cancelled {
         stream.cancelled_at_ledger
     } else {
         now
     };
+
+    if stream.status == StreamStatus::Cancelled && stream.cancelled_at_ledger < stream.cliff_ledger
+    {
+        return Ok(0);
+    }
 
     if effective_now <= stream.start_ledger {
         return Ok(0);

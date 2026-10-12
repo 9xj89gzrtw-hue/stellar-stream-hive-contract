@@ -627,3 +627,198 @@ fn test_create_event_carries_cliff_and_cancellable() {
     let events = ctx.env.events().all();
     assert!(!events.events().is_empty());
 }
+
+/// Regression: cancelling before the cliff used to refund the sender only the
+/// unstreamed remainder while `withdrawable_amount` returned 0 forever, leaving
+/// the accrued-but-unclaimable part stranded in the vault.
+#[test]
+fn test_cancel_before_cliff_refunds_the_sender_in_full() {
+    let ctx = setup();
+    let id = ctx.stream.create_stream(
+        &ctx.sender,
+        &ctx.recipient,
+        &ctx.token_address,
+        &AMOUNT,
+        &1_000,
+        &2_000,
+        &1_500, // cliff at the midpoint
+        &true,
+    );
+    set_ledger(&ctx, 1_200); // streaming, but before the cliff
+    ctx.stream.cancel_stream(&ctx.sender, &id);
+
+    assert_eq!(
+        ctx.token.balance(&ctx.sender),
+        AMOUNT * 10,
+        "sender made whole"
+    );
+    assert_eq!(ctx.vault.balance_of_stream(&id), 0, "nothing stranded");
+    assert_eq!(ctx.stream.streamed_amount(&id), 0);
+    assert_eq!(ctx.stream.withdrawable_amount(&id), 0);
+
+    // and it stays that way once the original cliff and end have passed
+    set_ledger(&ctx, 3_000);
+    assert_eq!(ctx.stream.withdrawable_amount(&id), 0);
+    assert_eq!(ctx.token.balance(&ctx.recipient), 0);
+}
+
+// ---------------------------------------------------------------------
+// Conservation sweep
+// ---------------------------------------------------------------------
+
+/// Tiny deterministic PRNG (PCG-style LCG) so the sweep is reproducible and
+/// needs no extra dev-dependency.
+struct Lcg(u64);
+
+impl Lcg {
+    fn next(&mut self) -> u64 {
+        self.0 = self
+            .0
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        self.0 >> 33
+    }
+}
+
+/// `floor(total * elapsed / duration)` -- the most the recipient can ever be
+/// entitled to at `seq`, independent of the contract's implementation.
+fn reference_streamed(total: i128, start: u32, end: u32, seq: u32) -> i128 {
+    if seq <= start {
+        return 0;
+    }
+    let elapsed = i128::from(seq.min(end) - start);
+    total * elapsed / i128::from(end - start)
+}
+
+/// Whatever mix of schedule, cliff, withdrawals and cancellation is thrown at
+/// it, value is neither created nor destroyed, the recipient never holds more
+/// than has accrued, accrual never goes backwards, and the vault's per-stream
+/// balance always equals what is still owed.
+#[test]
+fn test_value_is_conserved_across_randomized_schedules() {
+    // (total, start, end, cliff, cancel_at)
+    let cases: [(i128, u32, u32, u32, Option<u32>); 9] = [
+        (1_000_003, 100, 107, 100, None),              // indivisible, tiny
+        (1_000_003, 100, 107, 103, None),              // with a cliff
+        (9_999_999, 50, 5_000, 2_500, None),           // long, cliff at the midpoint
+        (777, 10, 1_000, 10, Some(500)),               // cancelled mid-stream
+        (5_000_001, 1, 3, 2, Some(2)),                 // cancelled right at the cliff
+        (1_000_000, 1_000, 2_000, 1_500, Some(1_200)), // cancelled before the cliff
+        (1_000_000, 1_000, 2_000, 1_000, Some(500)),   // cancelled before it starts
+        (10, 1, 4, 1, None),                           // dust amounts
+        (2_000_000, 200, 4_000, 200, Some(3_999)),     // cancelled one ledger before the end
+    ];
+
+    for (case_no, &(total, start, end, cliff, cancel_at)) in cases.iter().enumerate() {
+        let ctx = setup();
+        let supply = AMOUNT * 10; // minted to the sender in `setup`
+        let id = ctx.stream.create_stream(
+            &ctx.sender,
+            &ctx.recipient,
+            &ctx.token_address,
+            &total,
+            &start,
+            &end,
+            &cliff,
+            &true,
+        );
+
+        let mut rng = Lcg(0x5EED_0000 + case_no as u64);
+        let mut cancelled = false;
+        let mut frozen: i128 = 0; // streamed amount at cancellation
+        let mut last_streamed: i128 = 0;
+
+        let step = ((end - start) / 40).max(1);
+        let mut seq = start.saturating_sub(2);
+        while seq <= end + 2 {
+            set_ledger(&ctx, seq);
+
+            if !cancelled && cancel_at.is_some_and(|c| seq >= c) {
+                ctx.stream.cancel_stream(&ctx.sender, &id);
+                cancelled = true;
+                frozen = ctx.stream.streamed_amount(&id);
+                // A pre-cliff cancel voids the recipient's accrual (it drops to 0), so the
+                // "never goes backwards" baseline restarts at the frozen value.
+                last_streamed = frozen;
+                // Cancelling can never hand the recipient more than accrued.
+                assert!(
+                    frozen <= reference_streamed(total, start, end, seq),
+                    "case {case_no}"
+                );
+                // The sender was refunded exactly the unstreamed remainder.
+                assert_eq!(
+                    ctx.token.balance(&ctx.sender),
+                    supply - frozen,
+                    "case {case_no}"
+                );
+            }
+
+            match rng.next() % 3 {
+                0 => {
+                    let w = ctx.stream.withdrawable_amount(&id);
+                    if w > 0 {
+                        let amount = 1 + i128::from(rng.next() % w as u64);
+                        ctx.stream.withdraw(&ctx.recipient, &id, &amount);
+                    }
+                }
+                1 => {
+                    ctx.stream.withdraw_max(&ctx.recipient, &id);
+                }
+                _ => {}
+            }
+
+            let received = ctx.token.balance(&ctx.recipient);
+            let in_vault = ctx.token.balance(&ctx.vault.address);
+            let streamed = ctx.stream.streamed_amount(&id);
+
+            // 1. value is conserved
+            assert_eq!(
+                ctx.token.balance(&ctx.sender) + received + in_vault,
+                supply,
+                "case {case_no} seq {seq}: tokens created or destroyed"
+            );
+            // 2. recipient never holds more than has accrued
+            assert!(received <= streamed, "case {case_no} seq {seq}: overpaid");
+            assert!(
+                received <= total,
+                "case {case_no} seq {seq}: paid beyond deposit"
+            );
+            // 3. accrual only moves forward
+            assert!(
+                streamed >= last_streamed,
+                "case {case_no} seq {seq}: accrual went backwards"
+            );
+            last_streamed = streamed;
+            // 4. the vault holds exactly what is still owed on this stream
+            let owed = if cancelled {
+                frozen - received
+            } else {
+                total - received
+            };
+            assert_eq!(
+                ctx.vault.balance_of_stream(&id),
+                owed,
+                "case {case_no} seq {seq}"
+            );
+
+            seq += step;
+        }
+
+        // Past the end (or after cancelling) the recipient can drain what is owed,
+        // and nothing is left stranded in the vault.
+        set_ledger(&ctx, end + 10);
+        ctx.stream.withdraw_max(&ctx.recipient, &id);
+        let expected_to_recipient = if cancelled { frozen } else { total };
+        assert_eq!(
+            ctx.token.balance(&ctx.recipient),
+            expected_to_recipient,
+            "case {case_no}"
+        );
+        assert_eq!(ctx.vault.balance_of_stream(&id), 0, "case {case_no}");
+        assert_eq!(
+            ctx.token.balance(&ctx.sender),
+            supply - expected_to_recipient,
+            "case {case_no}"
+        );
+    }
+}

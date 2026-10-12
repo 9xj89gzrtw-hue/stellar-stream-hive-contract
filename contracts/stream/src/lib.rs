@@ -220,14 +220,18 @@ impl StreamContract {
             return Err(StreamError::AlreadyFinalized);
         }
 
+        // Mark the stream cancelled *before* computing the split so that the
+        // amount refunded to the sender and the amount the recipient can later
+        // withdraw come from the same function and cannot disagree. (Computing
+        // the recipient's share from raw accrual here while `withdrawable_amount`
+        // zeroes pre-cliff cancellations used to strand funds in the vault.)
+        stream.status = StreamStatus::Cancelled;
+        stream.cancelled_at_ledger = now;
         let streamed_now = math::streamed_amount(&stream, now)?;
         let remainder = stream
             .total_amount
             .checked_sub(streamed_now)
             .ok_or(StreamError::MathOverflow)?;
-
-        stream.status = StreamStatus::Cancelled;
-        stream.cancelled_at_ledger = now;
         storage::set_stream(&env, &stream);
 
         if remainder > 0 {

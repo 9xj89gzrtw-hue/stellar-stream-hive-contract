@@ -5,6 +5,15 @@ All notable changes to the Stellar Stream Hive contracts. Format follows
 
 ## [Unreleased]
 
+### Fixed
+- **Stream (funds stranded on early cancel):** cancelling a stream *before its
+  cliff* refunded the sender only the unstreamed remainder, yet
+  `withdrawable_amount` returned 0 forever for such a stream, so the
+  accrued-but-unclaimable part stayed locked in the vault permanently. A
+  pre-cliff cancel now entitles the recipient to nothing and refunds the sender
+  in full; `cancel` events report `streamed_now = 0` in that case. Found by the
+  new randomized conservation test.
+
 ### Added
 - **Stream:** `pause` / `unpause` / `is_paused`. Pausing blocks only
   `create_stream`; withdrawals and cancellations always keep working so

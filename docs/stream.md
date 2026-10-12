@@ -75,6 +75,12 @@ at `44,990` forever — the recipient can still withdraw up to that amount
 (minus whatever they'd already withdrawn), but ledger progress after
 cancellation can never inflate it further.
 
+**Cancelling before the cliff.** The recipient earns nothing before
+`cliff_ledger`, so a stream cancelled earlier is frozen at `0`: the sender is
+refunded the entire deposit, the `cancel` event reports `streamed_now = 0`, and
+nothing is left in the vault. (Earlier revisions refunded only the unstreamed
+remainder while leaving the accrued part unwithdrawable, which stranded it.)
+
 ## Data model
 
 ```rust
