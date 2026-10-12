@@ -23,6 +23,11 @@ All notable changes to the Stellar Stream Hive contracts. Format follows
 - `SECURITY.md` with a private disclosure process.
 
 ### Changed
+- **Deploy script:** validates the network and identity up front, requires
+  `CONFIRM_MAINNET=yes` for mainnet, verifies the deployed wiring on-chain,
+  and writes `deployments/<network>.json` with WASM hashes plus ready-to-paste
+  env lines for the frontend and API. Shell scripts are pinned to LF via
+  `.gitattributes` so Windows checkouts do not break them.
 - **Registry:** stream ids are now stored one ledger entry per registration
   index (`StreamCount` + `StreamIdAt`) instead of a single growing `Vec`, so
   registration stays O(1) and cannot hit the ledger-entry size limit. Added

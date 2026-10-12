@@ -22,8 +22,16 @@ project is a grant-stage prototype._
 
 ## How this file gets updated
 
-`scripts/deploy.sh` builds, optimizes, and deploys all three contracts in
-dependency order (vault → stream → registry) and prints the resulting
-contract IDs. After running it, update the tables above with the network,
-contract IDs, the WASM hash (`stellar contract info` or the hash printed
-during deploy), and the deployment date.
+`scripts/deploy.sh <network> <identity>` builds, optimizes and deploys all
+three contracts in dependency order (vault -> stream -> registry), initializes
+them, and then **verifies the wiring on-chain** (admins, the vault's trusted
+stream contract, and that the stream contract starts unpaused) before
+reporting success.
+
+It writes `deployments/<network>.json` (contract ids, WASM sha256, admin,
+timestamp) and prints a ready-to-paste table for this file plus the
+environment lines for the frontend (`NEXT_PUBLIC_*_CONTRACT_ID`) and the API
+(`STREAM_CONTRACT_ID`).
+
+Deploying to mainnet additionally requires `CONFIRM_MAINNET=yes`; the
+contracts have not been audited (see `SECURITY.md`).
