@@ -152,3 +152,7 @@ non-linear curve) without disturbing existing streams:
 - New public contract functions need tests covering both the happy path
   and at least one rejection path (bad auth, bad input, or a broken
   invariant).
+
+## Code of conduct
+
+This project follows the [Code of Conduct](CODE_OF_CONDUCT.md). Report unacceptable behavior through the private reporting link in [SECURITY.md](SECURITY.md).
