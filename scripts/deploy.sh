@@ -26,6 +26,18 @@
 
 set -euo pipefail
 
+# Prints the usage block from the header comment above.
+usage() {
+  awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"
+}
+
+case "${1:-}" in
+  -h | --help)
+    usage
+    exit 0
+    ;;
+esac
+
 NETWORK="${1:-testnet}"
 SOURCE="${2:-deployer}"
 
@@ -153,6 +165,7 @@ expect_eq "stream contract starts unpaused" "$(invoke "$STREAM_ID" is_paused | u
 
 DEPLOYED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 mkdir -p deployments
+
 cat > "deployments/$NETWORK.json" <<EOF
 {
   "network": "$NETWORK",
