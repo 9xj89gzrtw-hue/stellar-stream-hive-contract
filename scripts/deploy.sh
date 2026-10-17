@@ -95,6 +95,11 @@ expect_eq() {
   echo "ok: $what"
 }
 
+if command -v rustup >/dev/null 2>&1 \
+  && ! rustup target list --installed | grep -qx "wasm32v1-none"; then
+  die "the wasm32v1-none target is not installed. Install it with: rustup target add wasm32v1-none"
+fi
+
 echo
 echo "-- Building all contracts to wasm32v1-none (release) --"
 cargo build --target wasm32v1-none --release \
