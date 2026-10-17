@@ -171,6 +171,13 @@ expect_eq "stream contract starts unpaused" "$(invoke "$STREAM_ID" is_paused | u
 DEPLOYED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 mkdir -p deployments
 
+# Keep the previous ids: funds may still sit in the old contracts.
+if [ -f "deployments/$NETWORK.json" ]; then
+  BACKUP="deployments/$NETWORK.$(date -u +%Y%m%dT%H%M%SZ).json.bak"
+  cp "deployments/$NETWORK.json" "$BACKUP"
+  echo "kept the previous deployment record as $BACKUP"
+fi
+
 cat > "deployments/$NETWORK.json" <<EOF
 {
   "network": "$NETWORK",
