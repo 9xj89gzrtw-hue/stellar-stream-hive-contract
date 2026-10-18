@@ -110,6 +110,31 @@ that genuinely needs to be persisted, since it can't be reconstructed from
 time alone. `get_stream`, `get_status`, and the `get_streams_by_*`
 functions all recompute the live status on every read.
 
+## Storage layout
+
+All keys are namespaced under a `DataKey` enum in
+`contracts/stream/src/storage.rs`:
+
+- `Admin` — instance storage, the admin address.
+- `Vault` — instance storage, the vault contract address.
+- `NextStreamId` — instance storage, the last stream id allocated. The next
+  `create_stream` returns this value plus one.
+- `Paused` — instance storage, whether `create_stream` is paused. Reads as
+  `false` when unset.
+- `Stream(id)` — persistent storage, the `Stream` record for that id.
+- `SenderStreams(address)` — persistent storage, the ids of every stream
+  created with that sender, in creation order.
+- `RecipientStreams(address)` — persistent storage, the ids of every stream
+  created with that recipient, in creation order.
+
+Entries are kept alive with TTL extensions using two constants:
+`LEDGER_THRESHOLD` = 120,960 ledgers (~7 days at 5s ledgers) and
+`LEDGER_BUMP` = 241,920 ledgers (~14 days). Writes to `Stream`,
+`SenderStreams` and `RecipientStreams` extend that entry's TTL, and writes to
+`Admin`, `Vault` and `Paused` extend the instance TTL with the same values.
+`NextStreamId` is stored in instance storage, so its TTL comes from the
+instance extensions above.
+
 ## Function reference
 
 ### `initialize(env, admin, vault)`
