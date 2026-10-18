@@ -97,6 +97,8 @@ a stream's accrued amount.
   model, stats, function reference, events.
 - [docs/events.md](docs/events.md) — every event across the three contracts,
   with topics and data fields for indexers.
+- [docs/cli.md](docs/cli.md) — copy-paste `stellar contract invoke` commands
+  for creating, withdrawing, cancelling and administering streams.
 
 ## Contributing
 
