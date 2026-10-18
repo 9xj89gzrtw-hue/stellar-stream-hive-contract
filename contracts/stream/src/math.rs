@@ -270,4 +270,56 @@ mod tests {
         s.cancelled_at_ledger = 300;
         assert_eq!(withdrawable_amount(&s, 9_999).unwrap(), 0);
     }
+
+    #[test]
+    fn compute_status_is_cancelled_at_every_ledger() {
+        let env = Env::default();
+        let mut s = make_stream(&env, 100, 200, 100, 1000);
+        s.status = StreamStatus::Cancelled;
+        s.cancelled_at_ledger = 150;
+        // A stored `Cancelled` status is terminal and wins regardless of
+        // where `now` sits relative to the schedule.
+        assert_eq!(compute_status(&s, 50), StreamStatus::Cancelled);
+        assert_eq!(compute_status(&s, 150), StreamStatus::Cancelled);
+        assert_eq!(compute_status(&s, 999), StreamStatus::Cancelled);
+    }
+
+    #[test]
+    fn zero_duration_stream_errors_after_start() {
+        let env = Env::default();
+        // start == end: `create_stream` rejects such streams anyway, but the
+        // pure math must still behave sanely (no division by zero).
+        let s = make_stream(&env, 100, 100, 100, 1000);
+        assert_eq!(streamed_amount(&s, 100).unwrap(), 0);
+        assert_eq!(
+            streamed_amount(&s, 101),
+            Err(StreamError::InvalidTimeRange)
+        );
+    }
+
+    #[test]
+    fn zero_total_amount_streams_zero_at_every_ledger() {
+        let env = Env::default();
+        let s = make_stream(&env, 100, 200, 100, 0);
+        for now in 0..=300u32 {
+            assert_eq!(streamed_amount(&s, now).unwrap(), 0);
+            assert_eq!(withdrawable_amount(&s, now).unwrap(), 0);
+        }
+    }
+
+    #[test]
+    fn cancelled_exactly_at_cliff_keeps_accrued_amount() {
+        let env = Env::default();
+        let mut s = make_stream(&env, 0, 1000, 500, 1_000_000);
+        s.status = StreamStatus::Cancelled;
+        s.cancelled_at_ledger = 500;
+        // At exactly the cliff the recipient keeps what accrued; only
+        // strictly earlier cancellations pay nothing.
+        assert!(streamed_amount(&s, 9_999).unwrap() > 0);
+        assert!(withdrawable_amount(&s, 9_999).unwrap() > 0);
+
+        s.cancelled_at_ledger = 499;
+        assert_eq!(streamed_amount(&s, 9_999).unwrap(), 0);
+        assert_eq!(withdrawable_amount(&s, 9_999).unwrap(), 0);
+    }
 }
