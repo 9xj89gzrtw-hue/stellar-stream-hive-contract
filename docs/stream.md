@@ -215,7 +215,7 @@ the full deposit → withdraw → release path is tested end-to-end.
 | 5 | `InvalidTimeRange` | `end_ledger <= start_ledger` |
 | 6 | `InvalidCliff` | cliff outside `[start_ledger, end_ledger]` |
 | 7 | `StreamNotFound` | no stream with that id |
-| 8 | `BeforeCliff` | withdrawal before the cliff |
+| 8 | `BeforeCliff` | reserved, currently unused (a withdrawal before the cliff returns `ExceedsWithdrawable`) |
 | 9 | `ExceedsWithdrawable` | amount above `withdrawable_amount` |
 | 10 | `NotCancellable` | stream created with `cancellable = false` |
 | 11 | `AlreadyFinalized` | stream already cancelled or completed |
