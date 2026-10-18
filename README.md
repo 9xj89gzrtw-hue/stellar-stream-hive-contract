@@ -95,6 +95,8 @@ a stream's accrued amount.
   security boundary, function reference, events.
 - [docs/registry.md](docs/registry.md) — the registry contract: indexing
   model, stats, function reference, events.
+- [docs/events.md](docs/events.md) — every event across the three contracts,
+  with topics and data fields for indexers.
 
 ## Contributing
 
