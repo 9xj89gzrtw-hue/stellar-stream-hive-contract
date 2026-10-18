@@ -159,6 +159,16 @@ All keys are namespaced under a `DataKey` enum:
 
 ## Error reference
 
-See `contracts/vault/src/error.rs` for the full `VaultError` enum:
-`AlreadyInitialized`, `NotInitialized`, `Unauthorized`, `InvalidAmount`,
-`InsufficientBalance`, `MathOverflow`, `TokenMismatch`.
+Every rejected call returns a `VaultError`. In CLI output it appears as the
+contract error number, for example `Error(Contract, #3)` for `Unauthorized`.
+The table mirrors the enum in `contracts/vault/src/error.rs`.
+
+| Code | Name | When it is returned |
+|---|---|---|
+| 1 | `AlreadyInitialized` | `initialize` is called a second time |
+| 2 | `NotInitialized` | a function that needs the contract set up runs before `initialize`, or the stored stream contract or admin is missing |
+| 3 | `Unauthorized` | `release` or `refund` is called by an address other than the configured stream contract, or `set_stream_contract` is called by an address other than the stored admin |
+| 4 | `InvalidAmount` | `deposit`, `release` or `refund` is called with an amount of zero or less |
+| 5 | `InsufficientBalance` | `release` or `refund` asks for more than the stream's locked balance |
+| 6 | `MathOverflow` | checked arithmetic on a stream balance or the per-token total overflows or underflows |
+| 7 | `TokenMismatch` | the token passed for a `stream_id` differs from the token that stream was first funded with |
