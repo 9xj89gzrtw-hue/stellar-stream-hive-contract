@@ -153,6 +153,41 @@ non-linear curve) without disturbing existing streams:
 6. Update `docs/stream.md` with the new formula and a worked example, the
    same way the linear one is documented.
 
+## Writing tests
+
+**Naming.** Name each test `test_<function>_<behaviour>`, for example
+`test_withdraw_rejects_non_recipient_caller`. The name should say what is
+being checked, so a failing test is readable from the output alone.
+
+**Typed errors.** Use the generated `try_*` client methods, such as
+`try_create_stream`, when you need to assert on a specific error. They return
+a `Result` that you can compare with `assert_eq!`, for example
+`assert_eq!(try_create(&ctx), Err(StreamError::Paused));`. A plain client call
+that fails panics, so a `#[should_panic]` test can only tell you that something
+failed, not what failed. Use `#[should_panic]` only when the panic itself is
+the behaviour under test.
+
+**Setup.** Each crate has a `setup()` helper in its `test.rs` that registers
+the contracts, mints a token, and returns a context struct. Reuse it so each
+test starts from the same known state. Do not hand-build the environment in
+individual tests.
+
+**Checklist for a new public function.** Cover each of these:
+
+1. **Happy path.** The call succeeds and the stored state is what you expect.
+2. **Rejection path with the exact error.** Use `try_*` and assert the specific
+   error variant. Include one case for each authorization or input check the
+   function performs.
+3. **Boundary values.** Test the first and last valid ledger, the cliff ledger,
+   a zero amount, and the largest amount the function accepts. The stream tests
+   use the `START`, `CLIFF` and `END` constants for this.
+4. **Events.** Check that the expected event is emitted, for example with
+   `env.events().all()`, and that it carries the right fields.
+
+Any change to the vault's `release`, `refund`, or `authorize_and_pay` also needs
+a test proving that a caller other than the stream contract is rejected. See
+["The vault's security boundary"](#the-vaults-security-boundary) above.
+
 ## Pull requests
 
 - Keep contract logic changes and documentation changes in the same PR
