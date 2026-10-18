@@ -20,6 +20,36 @@ Keeping the vault this simple is deliberate: the smaller and more
 mechanical the code that actually moves money, the easier it is to audit
 and the smaller the attack surface.
 
+### Call flow
+
+The stream contract is the only caller of the vault after setup. Each step
+below shows the party that authorizes it. The stream contract does not
+sign for itself: it is the invoking contract, so the vault accepts it as
+`caller` once its address matches the configured `stream_contract`.
+
+```mermaid
+sequenceDiagram
+    actor Sender
+    actor Recipient
+    participant Stream as Stream contract
+    participant Vault as Vault contract
+
+    Note over Sender,Stream: create_stream requires sender.require_auth()
+    Sender->>Stream: create_stream(sender, ...)
+    Stream->>Vault: deposit(from = sender, token, amount, stream_id)
+    Note over Vault: from.require_auth(), tokens move from sender to vault
+
+    Note over Recipient,Stream: withdraw requires recipient.require_auth()
+    Recipient->>Stream: withdraw(recipient, stream_id, amount)
+    Stream->>Vault: release(caller = stream, to = recipient, token, amount, stream_id)
+    Note over Vault: caller must equal stream_contract, tokens move from vault to recipient
+
+    Note over Sender,Stream: cancel_stream requires sender.require_auth()
+    Sender->>Stream: cancel_stream(sender, stream_id)
+    Stream->>Vault: refund(caller = stream, to = sender, token, amount, stream_id)
+    Note over Vault: caller must equal stream_contract, tokens move from vault to sender
+```
+
 ## The security boundary
 
 **This is the most important part of the whole system.** [`release`](#release)
