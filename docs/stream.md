@@ -110,6 +110,23 @@ that genuinely needs to be persisted, since it can't be reconstructed from
 time alone. `get_stream`, `get_status`, and the `get_streams_by_*`
 functions all recompute the live status on every read.
 
+### Status lifecycle
+
+```mermaid
+stateDiagram-v2
+    [*] --> Pending: create_stream
+    Pending --> Active: ledger reaches start_ledger
+    Active --> Completed: ledger reaches end_ledger
+    Pending --> Cancelled: cancel_stream (cancellable only)
+    Active --> Cancelled: cancel_stream (cancellable only)
+    Completed --> [*]
+    Cancelled --> [*]
+```
+
+`Pending`, `Active` and `Completed` follow the ledger and are never written to
+storage. `Cancelled` is persisted by `cancel_stream`. A stream that has
+`Completed` can no longer be cancelled (`AlreadyFinalized`).
+
 ## Function reference
 
 ### `initialize(env, admin, vault)`
