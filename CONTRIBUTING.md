@@ -43,6 +43,13 @@ cargo test
 # Run just one contract's tests
 cargo test -p stellar-stream-hive-stream
 
+# Run one test by name. The argument is a substring match, so this
+# also runs any test whose name contains it.
+cargo test -p stellar-stream-hive-stream test_withdraw_rejects_non_recipient_caller
+
+# Show println! and debug output from a test (it is captured by default)
+cargo test -p stellar-stream-hive-stream test_withdraw_rejects_non_recipient_caller -- --nocapture
+
 # Compile every contract to the real deployment artifact
 cargo build --target wasm32v1-none --release \
   -p stellar-stream-hive-vault \
@@ -54,6 +61,12 @@ cargo build --target wasm32v1-none --release \
 stellar keys generate deployer --network testnet --fund
 scripts/deploy.sh testnet deployer
 ```
+
+Running the tests writes a `test_snapshots/` directory into each crate. The
+Soroban test environment generates these JSON files to record ledger and
+event state for each test. They are generated output, so do not commit them.
+They are listed in `.gitignore`, and you can delete them at any time. The next
+test run recreates them.
 
 A contract that only passes `cargo test` but fails to compile to
 `wasm32v1-none` is not done — that WASM build is the actual thing
