@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use crate::{RegistryContract, RegistryContractClient, StreamStatus};
+use crate::{RegistryContract, RegistryContractClient, RegistryError, StreamStatus};
 use soroban_sdk::{testutils::Address as _, Address, Env};
 
 struct TestCtx {
@@ -101,6 +101,66 @@ fn test_update_stream_tracks_withdrawn_delta() {
 
     ctx.registry.update_stream(&1, &700, &StreamStatus::Active);
     assert_eq!(ctx.registry.get_stats().total_withdrawn, 700);
+}
+
+#[test]
+fn test_lowering_withdrawn_does_not_reduce_total_withdrawn() {
+    let ctx = setup();
+    let sender = Address::generate(&ctx.env);
+    let recipient = Address::generate(&ctx.env);
+    let token = Address::generate(&ctx.env);
+    ctx.registry
+        .register_stream(&1, &sender, &recipient, &token, &1000);
+
+    ctx.registry.update_stream(&1, &100, &StreamStatus::Active);
+    ctx.registry.update_stream(&1, &40, &StreamStatus::Active);
+
+    assert_eq!(ctx.registry.get_stream_record(&1).withdrawn, 40);
+    assert_eq!(ctx.registry.get_stats().total_withdrawn, 100);
+}
+
+#[test]
+fn test_get_admin_before_initialize_returns_not_initialized() {
+    let env = Env::default();
+    let id = env.register(RegistryContract, ());
+    let registry = RegistryContractClient::new(&env, &id);
+
+    assert_eq!(registry.try_get_admin(), Err(Ok(RegistryError::NotInitialized)));
+}
+
+#[test]
+fn test_update_stream_to_pending_decrements_active_count() {
+    let ctx = setup();
+    let sender = Address::generate(&ctx.env);
+    let recipient = Address::generate(&ctx.env);
+    let token = Address::generate(&ctx.env);
+    ctx.registry
+        .register_stream(&1, &sender, &recipient, &token, &1000);
+    assert_eq!(ctx.registry.get_stats().active_streams, 1);
+
+    ctx.registry.update_stream(&1, &0, &StreamStatus::Pending);
+    assert_eq!(ctx.registry.get_stats().active_streams, 0);
+
+    ctx.registry.update_stream(&1, &0, &StreamStatus::Active);
+    assert_eq!(ctx.registry.get_stats().active_streams, 1);
+}
+
+#[test]
+fn test_cancelled_to_completed_keeps_active_count_at_zero() {
+    let ctx = setup();
+    let sender = Address::generate(&ctx.env);
+    let recipient = Address::generate(&ctx.env);
+    let token = Address::generate(&ctx.env);
+    ctx.registry
+        .register_stream(&1, &sender, &recipient, &token, &1000);
+
+    ctx.registry
+        .update_stream(&1, &0, &StreamStatus::Cancelled);
+    assert_eq!(ctx.registry.get_stats().active_streams, 0);
+
+    ctx.registry
+        .update_stream(&1, &0, &StreamStatus::Completed);
+    assert_eq!(ctx.registry.get_stats().active_streams, 0);
 }
 
 #[test]
