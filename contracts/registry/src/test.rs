@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use crate::{RegistryContract, RegistryContractClient, StreamStatus};
+use crate::{RegistryContract, RegistryContractClient, RegistryError, StreamStatus};
 use soroban_sdk::{testutils::Address as _, Address, Env};
 
 struct TestCtx {
@@ -38,6 +38,15 @@ fn test_initialize_sets_empty_stats() {
 fn test_initialize_twice_rejected() {
     let ctx = setup();
     ctx.registry.initialize(&ctx.admin);
+}
+
+#[test]
+fn test_get_active_streams_empty_after_initialize() {
+    let ctx = setup();
+    let active = ctx.registry.get_active_streams();
+    assert_eq!(active, soroban_sdk::Vec::<u64>::new(&ctx.env));
+    assert_eq!(active.len(), 0);
+    assert_eq!(ctx.registry.stream_count(), 0);
 }
 
 #[test]
@@ -101,6 +110,66 @@ fn test_update_stream_tracks_withdrawn_delta() {
 
     ctx.registry.update_stream(&1, &700, &StreamStatus::Active);
     assert_eq!(ctx.registry.get_stats().total_withdrawn, 700);
+}
+
+#[test]
+fn test_lowering_withdrawn_does_not_reduce_total_withdrawn() {
+    let ctx = setup();
+    let sender = Address::generate(&ctx.env);
+    let recipient = Address::generate(&ctx.env);
+    let token = Address::generate(&ctx.env);
+    ctx.registry
+        .register_stream(&1, &sender, &recipient, &token, &1000);
+
+    ctx.registry.update_stream(&1, &100, &StreamStatus::Active);
+    ctx.registry.update_stream(&1, &40, &StreamStatus::Active);
+
+    assert_eq!(ctx.registry.get_stream_record(&1).withdrawn, 40);
+    assert_eq!(ctx.registry.get_stats().total_withdrawn, 100);
+}
+
+#[test]
+fn test_get_admin_before_initialize_returns_not_initialized() {
+    let env = Env::default();
+    let id = env.register(RegistryContract, ());
+    let registry = RegistryContractClient::new(&env, &id);
+
+    assert_eq!(registry.try_get_admin(), Err(Ok(RegistryError::NotInitialized)));
+}
+
+#[test]
+fn test_update_stream_to_pending_decrements_active_count() {
+    let ctx = setup();
+    let sender = Address::generate(&ctx.env);
+    let recipient = Address::generate(&ctx.env);
+    let token = Address::generate(&ctx.env);
+    ctx.registry
+        .register_stream(&1, &sender, &recipient, &token, &1000);
+    assert_eq!(ctx.registry.get_stats().active_streams, 1);
+
+    ctx.registry.update_stream(&1, &0, &StreamStatus::Pending);
+    assert_eq!(ctx.registry.get_stats().active_streams, 0);
+
+    ctx.registry.update_stream(&1, &0, &StreamStatus::Active);
+    assert_eq!(ctx.registry.get_stats().active_streams, 1);
+}
+
+#[test]
+fn test_cancelled_to_completed_keeps_active_count_at_zero() {
+    let ctx = setup();
+    let sender = Address::generate(&ctx.env);
+    let recipient = Address::generate(&ctx.env);
+    let token = Address::generate(&ctx.env);
+    ctx.registry
+        .register_stream(&1, &sender, &recipient, &token, &1000);
+
+    ctx.registry
+        .update_stream(&1, &0, &StreamStatus::Cancelled);
+    assert_eq!(ctx.registry.get_stats().active_streams, 0);
+
+    ctx.registry
+        .update_stream(&1, &0, &StreamStatus::Completed);
+    assert_eq!(ctx.registry.get_stats().active_streams, 0);
 }
 
 #[test]
@@ -209,6 +278,104 @@ fn test_stream_count_tracks_registrations() {
     assert_eq!(ctx.registry.stream_count(), 0);
     register_n(&ctx, 3);
     assert_eq!(ctx.registry.stream_count(), 3);
+}
+
+#[test]
+fn test_stream_count_matches_stats_total_streams() {
+    let ctx = setup();
+    assert_eq!(
+        ctx.registry.stream_count(),
+        ctx.registry.get_stats().total_streams
+    );
+
+    let sender = Address::generate(&ctx.env);
+    let recipient = Address::generate(&ctx.env);
+    let token = Address::generate(&ctx.env);
+    for i in 0..4u64 {
+        ctx.registry
+            .register_stream(&(200 + i), &sender, &recipient, &token, &1000);
+        assert_eq!(
+            ctx.registry.stream_count(),
+            ctx.registry.get_stats().total_streams
+        );
+    }
+
+    // a rejected duplicate must not let the two counters diverge
+    assert!(ctx
+        .registry
+        .try_register_stream(&200, &sender, &recipient, &token, &1)
+        .is_err());
+    assert_eq!(
+        ctx.registry.stream_count(),
+        ctx.registry.get_stats().total_streams
+    );
+    assert_eq!(ctx.registry.stream_count(), 4);
+}
+
+#[test]
+fn test_register_stream_emits_event() {
+    let ctx = setup();
+    let sender = Address::generate(&ctx.env);
+    let recipient = Address::generate(&ctx.env);
+    let token = Address::generate(&ctx.env);
+
+    ctx.registry
+        .register_stream(&1, &sender, &recipient, &token, &1000);
+
+    let events = ctx.env.events().all();
+    let event = events.last().unwrap();
+    assert_eq!(
+        event.0,
+        soroban_sdk::vec![&ctx.env, ctx.registry.address.clone()]
+    );
+    assert_eq!(
+        event.1,
+        soroban_sdk::vec![
+            &ctx.env,
+            soroban_sdk::Symbol::new(&ctx.env, "register"),
+            soroban_sdk::Symbol::new(&ctx.env, "stream"),
+        ]
+    );
+    let data: (u64, i128) = soroban_sdk::FromVal::from_val(&ctx.env, &event.2);
+    assert_eq!(data, (1, 1000));
+}
+
+#[test]
+fn test_update_stream_emits_event() {
+    let ctx = setup();
+    let sender = Address::generate(&ctx.env);
+    let recipient = Address::generate(&ctx.env);
+    let token = Address::generate(&ctx.env);
+    ctx.registry
+        .register_stream(&1, &sender, &recipient, &token, &1000);
+
+    ctx.registry.update_stream(&1, &300, &StreamStatus::Active);
+
+    let events = ctx.env.events().all();
+    let event = events.last().unwrap();
+    assert_eq!(
+        event.0,
+        soroban_sdk::vec![&ctx.env, ctx.registry.address.clone()]
+    );
+    assert_eq!(
+        event.1,
+        soroban_sdk::vec![
+            &ctx.env,
+            soroban_sdk::Symbol::new(&ctx.env, "update"),
+            soroban_sdk::Symbol::new(&ctx.env, "stream"),
+        ]
+    );
+    let data: (u64, i128) = soroban_sdk::FromVal::from_val(&ctx.env, &event.2);
+    assert_eq!(data, (1, 300));
+}
+
+#[test]
+fn test_get_streams_page_zero_limit_is_empty() {
+    let ctx = setup();
+    register_n(&ctx, 3);
+    let page = ctx.registry.get_streams_page(&0, &0);
+    assert_eq!(page, soroban_sdk::Vec::<u64>::new(&ctx.env));
+    assert_eq!(page.len(), 0);
 }
 
 #[test]

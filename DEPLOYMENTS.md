@@ -30,6 +30,71 @@ _Not yet deployed. Mainnet deployment will only follow a successful
 testnet deployment, a completed audit, and explicit sign-off — this
 project is a grant-stage prototype._
 
+## Verify a deployment yourself
+
+You don't have to trust this file. Anyone can repeat the on-chain checks that
+`scripts/deploy.sh` runs, against the live contracts, with the
+[Stellar CLI](https://developer.stellar.org/docs/tools/cli). These calls are
+read-only, so `--source` can be any identity, including one with no funds.
+
+Set the testnet ids from the table above:
+
+```bash
+export NETWORK=testnet
+export VAULT_ID=CB67RYDOOIOR2YZERK77URMXDCOLDAVOFELZERDCH562OH2NMP2UNG2N
+export STREAM_ID=CCYM2PIMNHOJKWRV677QQNFUMNU2JKEHXTQKK6D3D7JF2UTEB5JNINYY
+export REGISTRY_ID=CA3MEGSTTI576GDVRFXZ2YJGGO3LAKOPNPGZ34F46FEDDHDCOWYQTNMG
+export ADMIN=GBLEJOG7B6ONTCL4F3T7F5G5NVYVKLLEMTV2C6XVZ7BF2ML4TUQVVZHI
+```
+
+Then run the four read calls. Each one matches a check in `deploy.sh`:
+
+```bash
+# 1. The vault's admin is the deployer
+stellar contract invoke --id $VAULT_ID --source <any identity> --network $NETWORK -- get_admin
+# expect: "GBLEJOG7B6ONTCL4F3T7F5G5NVYVKLLEMTV2C6XVZ7BF2ML4TUQVVZHI"
+
+# 2. The vault trusts the stream contract
+stellar contract invoke --id $VAULT_ID --source <any identity> --network $NETWORK -- get_stream_contract
+# expect: "CCYM2PIMNHOJKWRV677QQNFUMNU2JKEHXTQKK6D3D7JF2UTEB5JNINYY"
+
+# 3. The registry's admin is the deployer
+stellar contract invoke --id $REGISTRY_ID --source <any identity> --network $NETWORK -- get_admin
+# expect: "GBLEJOG7B6ONTCL4F3T7F5G5NVYVKLLEMTV2C6XVZ7BF2ML4TUQVVZHI"
+
+# 4. The stream contract starts unpaused
+stellar contract invoke --id $STREAM_ID --source <any identity> --network $NETWORK -- is_paused
+# expect: false
+```
+
+Check 4 reports the current state. If the admin has paused the stream contract
+since deployment, it prints `true`. A `true` result doesn't mean the
+deployment is wrong, but it does mean the check no longer describes the
+deployment-time state.
+
+The addresses in the expected output are the same ones written to the table
+above. If a check disagrees with this file, trust the chain and open an issue.
+
+### Compare WASM hashes
+
+The `wasm_sha256` column is the hash of each optimized WASM binary. To confirm
+that a contract runs that exact code, fetch its code from the chain and hash
+it:
+
+```bash
+stellar contract fetch --id $VAULT_ID --network $NETWORK --out-file vault.wasm
+sha256sum vault.wasm
+# expect: 3f660d81c46d412686c2908b1f0111ae5d9d44a972964487e89b8de829533d47
+```
+
+Repeat with `$STREAM_ID` (expect `317e697348e4144c04aafc65d4be4da7bb6a9d3dffb270967c440cd48cd8a581`)
+and `$REGISTRY_ID` (expect `ee857043d09cc82d8c07cb3305a61fb2c689edec1caea2b3ae646bb5d1f0ef54`).
+
+Rebuilding the source yourself gives the same hash only if the toolchain and
+dependencies match. The repo pins the Rust toolchain in `rust-toolchain.toml`
+and the dependency versions in `Cargo.lock`, and `deploy.sh` hashes the output
+after `stellar contract optimize`, so repeat that step too.
+
 ## How this file gets updated
 
 `scripts/deploy.sh <network> <identity>` builds, optimizes and deploys all
