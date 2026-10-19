@@ -77,7 +77,9 @@ A registration-ordered page of ids. `limit` is capped at `MAX_PAGE_SIZE`
 The current aggregate snapshot.
 
 ### `get_active_streams(env) -> Vec<u64>`
-Ids of every stream whose last-known status is `Active`.
+Ids of every stream whose last-known status is `Active`. Like
+`get_all_streams`, it reads one ledger entry per registered stream, so on a
+large registry prefer the paged accessors above.
 
 ### `get_stream_record(env, stream_id) -> StreamRecord`
 Read-only accessor for a single stream's registry-side summary.
