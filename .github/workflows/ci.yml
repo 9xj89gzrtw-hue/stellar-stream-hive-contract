@@ -26,6 +26,18 @@ jobs:
           -A clippy::too_many_arguments
           -A clippy::needless_borrows_for_generic_args
 
+  docs:
+    name: Docs (rustdoc, warnings as errors)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build rustdoc with warnings as errors
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --workspace --no-deps
+
   test:
     name: Test (native)
     runs-on: ubuntu-latest

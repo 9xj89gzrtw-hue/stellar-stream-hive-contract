@@ -160,7 +160,7 @@ impl RegistryContract {
     ///
     /// Reads one ledger entry per stream, so on a large registry this can
     /// exceed Soroban's per-transaction resource limits. Prefer
-    /// [`Self::get_streams_page`] and [`Self::stream_count`].
+    /// `get_streams_page` and `stream_count`.
     pub fn get_all_streams(env: Env) -> Vec<u64> {
         storage::get_all_stream_ids(&env)
     }
