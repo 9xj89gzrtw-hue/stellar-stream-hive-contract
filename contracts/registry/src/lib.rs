@@ -38,6 +38,10 @@ pub struct RegistryContract;
 #[contractimpl]
 impl RegistryContract {
     /// One-time setup.
+    ///
+    /// # Errors
+    ///
+    /// - `RegistryError::AlreadyInitialized`: `initialize` has already run.
     pub fn initialize(env: Env, admin: Address) -> Result<(), RegistryError> {
         if storage::has_admin(&env) {
             return Err(RegistryError::AlreadyInitialized);
@@ -60,6 +64,12 @@ impl RegistryContract {
     /// `Active` (streams are indexed right after creation, and any
     /// pre-cliff/pre-start nuance is left to the stream contract itself —
     /// `update_stream` can correct the status later).
+    ///
+    /// # Errors
+    ///
+    /// - `RegistryError::InvalidAmount`: `amount` is negative.
+    /// - `RegistryError::AlreadyRegistered`: a stream with `stream_id` is already registered.
+    /// - `RegistryError::MathOverflow`: a total or active counter, or `total_streamed`, overflows.
     pub fn register_stream(
         env: Env,
         stream_id: u64,
@@ -108,6 +118,12 @@ impl RegistryContract {
 
     /// Updates a previously registered stream's withdrawn amount and
     /// status, keeping aggregate stats consistent.
+    ///
+    /// # Errors
+    ///
+    /// - `RegistryError::InvalidAmount`: `withdrawn` is negative.
+    /// - `RegistryError::StreamNotFound`: no stream with `stream_id` was registered.
+    /// - `RegistryError::MathOverflow`: the withdrawn delta or an aggregate counter overflows.
     pub fn update_stream(
         env: Env,
         stream_id: u64,
@@ -196,11 +212,19 @@ impl RegistryContract {
     }
 
     /// Read-only accessor for a single stream's registry record.
+    ///
+    /// # Errors
+    ///
+    /// - `RegistryError::StreamNotFound`: no stream with `stream_id` was registered.
     pub fn get_stream_record(env: Env, stream_id: u64) -> Result<StreamRecord, RegistryError> {
         storage::get_record(&env, stream_id).ok_or(RegistryError::StreamNotFound)
     }
 
     /// Read-only accessor for the admin address.
+    ///
+    /// # Errors
+    ///
+    /// - `RegistryError::NotInitialized`: `initialize` has not run.
     pub fn get_admin(env: Env) -> Result<Address, RegistryError> {
         storage::get_admin(&env).ok_or(RegistryError::NotInitialized)
     }
