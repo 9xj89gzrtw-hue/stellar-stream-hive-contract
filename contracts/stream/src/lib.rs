@@ -47,6 +47,14 @@ impl StreamContract {
 
     /// Creates a new stream and pulls `total_amount` of `token` from
     /// `sender` into the vault. Returns the new stream's id.
+    ///
+    /// # Errors
+    ///
+    /// - `StreamError::Paused`: the contract is paused (checked first).
+    /// - `StreamError::InvalidAmount`: `total_amount` is zero or negative.
+    /// - `StreamError::InvalidTimeRange`: `end_ledger` is not strictly after `start_ledger`.
+    /// - `StreamError::InvalidCliff`: `cliff_ledger` is outside `[start_ledger, end_ledger]`.
+    /// - `StreamError::NotInitialized`: `initialize` has not run, so no vault is configured.
     pub fn create_stream(
         env: Env,
         sender: Address,
@@ -115,7 +123,13 @@ impl StreamContract {
     }
 
     /// Total value accrued so far, ignoring withdrawals. See
-    /// `math::streamed_amount` for the exact formula.
+    /// [`math::streamed_amount`] for the exact formula.
+    ///
+    /// # Errors
+    ///
+    /// - `StreamError::StreamNotFound`: no stream exists with `stream_id`.
+    /// - `StreamError::InvalidTimeRange`: the stored range is empty. `create_stream` rejects such ranges, so this is defensive only.
+    /// - `StreamError::MathOverflow`: the accrual arithmetic overflows.
     pub fn streamed_amount(env: Env, stream_id: u64) -> Result<i128, StreamError> {
         let stream = storage::get_stream(&env, stream_id).ok_or(StreamError::StreamNotFound)?;
         let now = env.ledger().sequence();
@@ -123,6 +137,12 @@ impl StreamContract {
     }
 
     /// `streamed_amount - withdrawn`, or 0 before the cliff.
+    ///
+    /// # Errors
+    ///
+    /// - `StreamError::StreamNotFound`: no stream exists with `stream_id`.
+    /// - `StreamError::InvalidTimeRange`: the stored range is empty. `create_stream` rejects such ranges, so this is defensive only.
+    /// - `StreamError::MathOverflow`: the accrual or subtraction overflows.
     pub fn withdrawable_amount(env: Env, stream_id: u64) -> Result<i128, StreamError> {
         let stream = storage::get_stream(&env, stream_id).ok_or(StreamError::StreamNotFound)?;
         let now = env.ledger().sequence();
@@ -131,6 +151,14 @@ impl StreamContract {
 
     /// The recipient withdraws `amount` (up to `withdrawable_amount`) from
     /// their stream.
+    ///
+    /// # Errors
+    ///
+    /// - `StreamError::InvalidAmount`: `amount` is zero or negative.
+    /// - `StreamError::StreamNotFound`: no stream exists with `stream_id`.
+    /// - `StreamError::Unauthorized`: `recipient` is not the stream's recipient.
+    /// - `StreamError::ExceedsWithdrawable`: `amount` is greater than `withdrawable_amount`. This includes every call made before the cliff, which returns this error rather than a cliff-specific one.
+    /// - `StreamError::MathOverflow`: the accrual or the `withdrawn` update overflows.
     pub fn withdraw(
         env: Env,
         recipient: Address,
@@ -186,6 +214,12 @@ impl StreamContract {
     /// for the same address within the same invocation is rejected by
     /// Soroban's auth framework ("frame is already authorized"), so this
     /// function must NOT also call `recipient.require_auth()` itself.
+    ///
+    /// # Errors
+    ///
+    /// - `StreamError::StreamNotFound`: no stream exists with `stream_id`.
+    /// - `StreamError::Unauthorized`: `recipient` is not the stream's recipient.
+    /// - `StreamError::MathOverflow`: the accrual or subtraction overflows.
     pub fn withdraw_max(env: Env, recipient: Address, stream_id: u64) -> Result<i128, StreamError> {
         let stream = storage::get_stream(&env, stream_id).ok_or(StreamError::StreamNotFound)?;
         if stream.recipient != recipient {
@@ -203,6 +237,14 @@ impl StreamContract {
     /// The sender cancels a cancellable stream. The recipient keeps
     /// whatever has streamed so far (frozen at this ledger); the sender is
     /// refunded the remainder.
+    ///
+    /// # Errors
+    ///
+    /// - `StreamError::StreamNotFound`: no stream exists with `stream_id`.
+    /// - `StreamError::Unauthorized`: `sender` is not the stream's sender.
+    /// - `StreamError::NotCancellable`: the stream was created with `cancellable = false`.
+    /// - `StreamError::AlreadyFinalized`: the stream is already cancelled or has run to completion.
+    /// - `StreamError::MathOverflow`: the refund arithmetic overflows.
     pub fn cancel_stream(env: Env, sender: Address, stream_id: u64) -> Result<(), StreamError> {
         sender.require_auth();
 
@@ -259,6 +301,10 @@ impl StreamContract {
 
     /// Returns the stream with its `status` freshly recomputed for the
     /// current ledger.
+    ///
+    /// # Errors
+    ///
+    /// - `StreamError::StreamNotFound`: no stream exists with `stream_id`.
     pub fn get_stream(env: Env, stream_id: u64) -> Result<Stream, StreamError> {
         let mut stream = storage::get_stream(&env, stream_id).ok_or(StreamError::StreamNotFound)?;
         let now = env.ledger().sequence();
@@ -266,8 +312,8 @@ impl StreamContract {
         Ok(stream)
     }
 
-    /// All streams where `sender` is the sender, freshest status first
-    /// isn't guaranteed — insertion order is preserved.
+    /// Returns streams in creation order with `status` recomputed for the
+    /// current ledger.
     pub fn get_streams_by_sender(env: Env, sender: Address) -> Vec<Stream> {
         let ids = storage::get_sender_streams(&env, &sender);
         Self::hydrate(&env, &ids)
@@ -280,6 +326,10 @@ impl StreamContract {
     }
 
     /// The live, derived status of a stream.
+    ///
+    /// # Errors
+    ///
+    /// - `StreamError::StreamNotFound`: no stream exists with `stream_id`.
     pub fn get_status(env: Env, stream_id: u64) -> Result<StreamStatus, StreamError> {
         let stream = storage::get_stream(&env, stream_id).ok_or(StreamError::StreamNotFound)?;
         let now = env.ledger().sequence();

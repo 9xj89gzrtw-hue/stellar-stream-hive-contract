@@ -29,6 +29,10 @@ impl VaultContract {
     /// One-time setup. Records the admin (who may later repoint the
     /// authorized stream contract) and the stream contract allowed to move
     /// funds held by this vault.
+    ///
+    /// # Errors
+    ///
+    /// - `VaultError::AlreadyInitialized`: `initialize` has already run.
     pub fn initialize(
         env: Env,
         admin: Address,
@@ -46,6 +50,12 @@ impl VaultContract {
     /// Pulls `amount` of `token` from `from` into the vault and credits it
     /// to `stream_id`'s locked balance. Called by the stream contract as
     /// part of `create_stream`.
+    ///
+    /// # Errors
+    ///
+    /// - `VaultError::InvalidAmount`: `amount` is zero or negative.
+    /// - `VaultError::TokenMismatch`: `stream_id` was already funded with a different token.
+    /// - `VaultError::MathOverflow`: the stream's balance or the token's total locked amount overflows.
     pub fn deposit(
         env: Env,
         from: Address,
@@ -98,6 +108,15 @@ impl VaultContract {
     /// SECURITY: `caller` must authenticate AND must equal the configured
     /// `stream_contract`. This is the only thing standing between the
     /// vault's funds and anyone who can construct a call.
+    ///
+    /// # Errors
+    ///
+    /// - `VaultError::InvalidAmount`: `amount` is zero or negative.
+    /// - `VaultError::NotInitialized`: no stream contract has been configured.
+    /// - `VaultError::Unauthorized`: `caller` is not the configured stream contract.
+    /// - `VaultError::TokenMismatch`: `token` does not match the token `stream_id` was funded with.
+    /// - `VaultError::InsufficientBalance`: `amount` is greater than the stream's locked balance.
+    /// - `VaultError::MathOverflow`: the balance or total locked subtraction underflows.
     pub fn release(
         env: Env,
         caller: Address,
@@ -122,7 +141,16 @@ impl VaultContract {
     /// cancellable stream is cancelled and unstreamed funds must return to
     /// the sender.
     ///
-    /// SECURITY: identical caller check to `release`.
+    /// SECURITY: identical caller check to [`release`].
+    ///
+    /// # Errors
+    ///
+    /// - `VaultError::InvalidAmount`: `amount` is zero or negative.
+    /// - `VaultError::NotInitialized`: no stream contract has been configured.
+    /// - `VaultError::Unauthorized`: `caller` is not the configured stream contract.
+    /// - `VaultError::TokenMismatch`: `token` does not match the token `stream_id` was funded with.
+    /// - `VaultError::InsufficientBalance`: `amount` is greater than the stream's locked balance.
+    /// - `VaultError::MathOverflow`: the balance or total locked subtraction underflows.
     pub fn refund(
         env: Env,
         caller: Address,
@@ -155,6 +183,11 @@ impl VaultContract {
     /// Admin-only: repoints the single contract address authorized to call
     /// `release` / `refund`. Useful for upgrading the stream contract
     /// without redeploying the vault (and re-migrating custodied funds).
+    ///
+    /// # Errors
+    ///
+    /// - `VaultError::NotInitialized`: `initialize` has not run, so there is no admin to check against.
+    /// - `VaultError::Unauthorized`: `admin` is not the stored admin.
     pub fn set_stream_contract(
         env: Env,
         admin: Address,
@@ -171,11 +204,19 @@ impl VaultContract {
     }
 
     /// Read-only accessor for the currently configured stream contract.
+    ///
+    /// # Errors
+    ///
+    /// - `VaultError::NotInitialized`: `initialize` has not run.
     pub fn get_stream_contract(env: Env) -> Result<Address, VaultError> {
         storage::get_stream_contract(&env).ok_or(VaultError::NotInitialized)
     }
 
     /// Read-only accessor for the admin address.
+    ///
+    /// # Errors
+    ///
+    /// - `VaultError::NotInitialized`: `initialize` has not run.
     pub fn get_admin(env: Env) -> Result<Address, VaultError> {
         storage::get_admin(&env).ok_or(VaultError::NotInitialized)
     }

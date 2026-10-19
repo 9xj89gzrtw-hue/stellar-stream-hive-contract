@@ -13,6 +13,12 @@ for the indexing API and the web frontend:
 - API/indexer: https://github.com/Stellar-Hive/stellar-stream-hive-api
 - Frontend: https://github.com/Stellar-Hive/stellar-stream-hive-frontend
 
+## Status
+
+- Deployed to **Stellar testnet**; mainnet is not deployed yet. Contract addresses are in [DEPLOYMENTS.md](DEPLOYMENTS.md).
+- **Not audited.** Do not use with funds you cannot afford to lose. See [SECURITY.md](SECURITY.md).
+- Deployment records per network live in [`deployments/`](deployments/README.md).
+
 ## Architecture
 
 Three contracts, each a workspace member under `contracts/`:
@@ -95,6 +101,10 @@ a stream's accrued amount.
   security boundary, function reference, events.
 - [docs/registry.md](docs/registry.md) — the registry contract: indexing
   model, stats, function reference, events.
+- [docs/events.md](docs/events.md) — every event across the three contracts,
+  with topics and data fields for indexers.
+- [docs/cli.md](docs/cli.md) — copy-paste `stellar contract invoke` commands
+  for creating, withdrawing, cancelling and administering streams.
 
 ## Contributing
 

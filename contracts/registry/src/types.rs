@@ -19,12 +19,22 @@ pub enum StreamStatus {
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StreamRecord {
+    /// Id of the stream in the stream contract.
     pub stream_id: u64,
+    /// Account that funded the stream.
     pub sender: Address,
+    /// Account that receives the streamed funds.
     pub recipient: Address,
+    /// Token contract the stream pays in.
     pub token: Address,
+    /// Total amount registered for the stream (its `total_amount`). Set once
+    /// by `register_stream` and never changed afterwards.
     pub amount: i128,
+    /// Absolute withdrawn amount as last reported by `update_stream`. This is
+    /// not a delta, so each update replaces the previous value.
     pub withdrawn: i128,
+    /// Status as last reported by `register_stream` or `update_stream`. It
+    /// may lag the stream contract until the next update.
     pub status: StreamStatus,
 }
 

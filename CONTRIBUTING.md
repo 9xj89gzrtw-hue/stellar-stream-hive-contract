@@ -36,12 +36,22 @@ real-time payment streaming. Sister repos:
 
 ## Build, test, deploy
 
+The `justfile` wraps the commands below: `just test`, `just fmt`, `just lint`, `just wasm`, and
+`just check` to run everything CI runs. Install [just](https://just.systems) to use it.
+
 ```bash
 # Run every test in the workspace (vault, stream, registry)
 cargo test
 
 # Run just one contract's tests
 cargo test -p stellar-stream-hive-stream
+
+# Run one test by name. The argument is a substring match, so this
+# also runs any test whose name contains it.
+cargo test -p stellar-stream-hive-stream test_withdraw_rejects_non_recipient_caller
+
+# Show println! and debug output from a test (it is captured by default)
+cargo test -p stellar-stream-hive-stream test_withdraw_rejects_non_recipient_caller -- --nocapture
 
 # Compile every contract to the real deployment artifact
 cargo build --target wasm32v1-none --release \
@@ -54,6 +64,12 @@ cargo build --target wasm32v1-none --release \
 stellar keys generate deployer --network testnet --fund
 scripts/deploy.sh testnet deployer
 ```
+
+Running the tests writes a `test_snapshots/` directory into each crate. The
+Soroban test environment generates these JSON files to record ledger and
+event state for each test. They are generated output, so do not commit them.
+They are listed in `.gitignore`, and you can delete them at any time. The next
+test run recreates them.
 
 A contract that only passes `cargo test` but fails to compile to
 `wasm32v1-none` is not done — that WASM build is the actual thing
@@ -140,6 +156,41 @@ non-linear curve) without disturbing existing streams:
 6. Update `docs/stream.md` with the new formula and a worked example, the
    same way the linear one is documented.
 
+## Writing tests
+
+**Naming.** Name each test `test_<function>_<behaviour>`, for example
+`test_withdraw_rejects_non_recipient_caller`. The name should say what is
+being checked, so a failing test is readable from the output alone.
+
+**Typed errors.** Use the generated `try_*` client methods, such as
+`try_create_stream`, when you need to assert on a specific error. They return
+a `Result` that you can compare with `assert_eq!`, for example
+`assert_eq!(try_create(&ctx), Err(StreamError::Paused));`. A plain client call
+that fails panics, so a `#[should_panic]` test can only tell you that something
+failed, not what failed. Use `#[should_panic]` only when the panic itself is
+the behaviour under test.
+
+**Setup.** Each crate has a `setup()` helper in its `test.rs` that registers
+the contracts, mints a token, and returns a context struct. Reuse it so each
+test starts from the same known state. Do not hand-build the environment in
+individual tests.
+
+**Checklist for a new public function.** Cover each of these:
+
+1. **Happy path.** The call succeeds and the stored state is what you expect.
+2. **Rejection path with the exact error.** Use `try_*` and assert the specific
+   error variant. Include one case for each authorization or input check the
+   function performs.
+3. **Boundary values.** Test the first and last valid ledger, the cliff ledger,
+   a zero amount, and the largest amount the function accepts. The stream tests
+   use the `START`, `CLIFF` and `END` constants for this.
+4. **Events.** Check that the expected event is emitted, for example with
+   `env.events().all()`, and that it carries the right fields.
+
+Any change to the vault's `release`, `refund`, or `authorize_and_pay` also needs
+a test proving that a caller other than the stream contract is rejected. See
+["The vault's security boundary"](#the-vaults-security-boundary) above.
+
 ## Pull requests
 
 - Keep contract logic changes and documentation changes in the same PR
@@ -149,3 +200,7 @@ non-linear curve) without disturbing existing streams:
 - New public contract functions need tests covering both the happy path
   and at least one rejection path (bad auth, bad input, or a broken
   invariant).
+
+## Code of conduct
+
+This project follows the [Code of Conduct](CODE_OF_CONDUCT.md). Report unacceptable behavior through the private reporting link in [SECURITY.md](SECURITY.md).
