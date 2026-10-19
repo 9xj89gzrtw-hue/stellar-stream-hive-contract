@@ -266,8 +266,8 @@ impl StreamContract {
         Ok(stream)
     }
 
-    /// All streams where `sender` is the sender, freshest status first
-    /// isn't guaranteed — insertion order is preserved.
+    /// Returns streams in creation order with `status` recomputed for the
+    /// current ledger.
     pub fn get_streams_by_sender(env: Env, sender: Address) -> Vec<Stream> {
         let ids = storage::get_sender_streams(&env, &sender);
         Self::hydrate(&env, &ids)

@@ -270,4 +270,16 @@ mod tests {
         s.cancelled_at_ledger = 300;
         assert_eq!(withdrawable_amount(&s, 9_999).unwrap(), 0);
     }
+
+    #[test]
+    fn withdrawable_floors_at_zero_when_withdrawn_exceeds_streamed() {
+        let env = Env::default();
+        // At ledger 100 only 10% of the 1_000_000 deposit has streamed, but
+        // the recipient has already taken 600_000. The raw difference is
+        // negative, and `withdrawable_amount` must clamp it to zero.
+        let mut s = make_stream(&env, 0, 1000, 0, 1_000_000);
+        s.withdrawn = 600_000;
+        assert_eq!(streamed_amount(&s, 100).unwrap(), 100_000);
+        assert_eq!(withdrawable_amount(&s, 100).unwrap(), 0);
+    }
 }

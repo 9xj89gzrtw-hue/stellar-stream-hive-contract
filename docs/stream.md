@@ -189,6 +189,15 @@ Read-only, live-computed status.
 `withdraw_max` or `cancel_stream`** -- it is an emergency brake on new
 deposits, not a way to trap funds that are already streaming.
 
+### `get_admin(env) -> Address`
+Read-only. Returns the current admin address. No authorization required.
+Fails with `NotInitialized` if `initialize` has not been called.
+
+### `get_vault(env) -> Address`
+Read-only. Returns the vault contract address set during `initialize`. No
+authorization required. Fails with `NotInitialized` if `initialize` has not
+been called.
+
 ### `transfer_admin(env, new_admin)`
 Requires authorization from **both** the current admin and `new_admin`, so
 the role cannot be handed to an address nobody controls by mistake.
