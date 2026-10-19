@@ -119,6 +119,20 @@ any call where `caller != authorized_writer`. This was left out of v1 to
 keep the function signatures matching the contract's specified interface
 exactly; it is a straightforward, backwards-incompatible follow-up.
 
+## Errors
+
+| Code | Name | Meaning | Returned by |
+|---|---|---|---|
+| 1 | `AlreadyInitialized` | `initialize` called twice | `initialize` |
+| 2 | `NotInitialized` | called before `initialize` | `get_admin` |
+| 3 | `InvalidAmount` | amount argument was negative | `register_stream`, `update_stream` |
+| 4 | `AlreadyRegistered` | `stream_id` was already registered | `register_stream` |
+| 5 | `StreamNotFound` | no stream with that id is registered | `update_stream`, `get_stream_record` |
+| 6 | `MathOverflow` | checked arithmetic overflowed or underflowed | `register_stream`, `update_stream` |
+
+The codes come from `contracts/registry/src/error.rs`. Errors are returned as
+Soroban contract errors, so a client sees the numeric code.
+
 ## Storage layout
 
 - `Admin` — instance storage.
