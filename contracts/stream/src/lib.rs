@@ -210,7 +210,7 @@ impl StreamContract {
     /// Convenience: withdraws the entire currently-withdrawable balance.
     ///
     /// Note: authorization is checked once, inside the delegated call to
-    /// [`Self::withdraw`] -- calling `require_auth()` a second time here
+    /// `withdraw` -- calling `require_auth()` a second time here
     /// for the same address within the same invocation is rejected by
     /// Soroban's auth framework ("frame is already authorized"), so this
     /// function must NOT also call `recipient.require_auth()` itself.
@@ -359,7 +359,7 @@ impl StreamContract {
     }
 
     /// A page of `recipient`'s streams in creation order. See
-    /// [`Self::get_streams_by_sender_page`] for the paging rules.
+    /// `get_streams_by_sender_page` for the paging rules.
     pub fn get_streams_by_recipient_page(
         env: Env,
         recipient: Address,
@@ -370,7 +370,7 @@ impl StreamContract {
         Self::hydrate(&env, &Self::slice(&env, &ids, offset, limit))
     }
 
-    /// Admin only. Blocks `create_stream` until [`Self::unpause`] is called.
+    /// Admin only. Blocks `create_stream` until `unpause` is called.
     /// Deliberately does NOT block `withdraw`, `withdraw_max` or
     /// `cancel_stream`: pausing is an emergency brake on new deposits, never
     /// a way to trap funds that are already streaming.

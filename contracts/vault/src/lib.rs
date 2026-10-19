@@ -5,11 +5,11 @@
 //! moves them when instructed to by the stream contract.
 //!
 //! ## Security boundary
-//! [`release`] and [`refund`] are the only ways funds leave the vault, and
+//! `release` and `refund` are the only ways funds leave the vault, and
 //! both require the caller to (a) cryptographically authenticate as the
 //! address they claim to be (`caller.require_auth()`) *and* (b) match the
-//! single `stream_contract` address configured at [`initialize`] /
-//! [`set_stream_contract`]. Anyone else calling these functions is rejected
+//! single `stream_contract` address configured at `initialize` /
+//! `set_stream_contract`. Anyone else calling these functions is rejected
 //! with [`VaultError::Unauthorized`] before any token movement happens.
 #![no_std]
 
