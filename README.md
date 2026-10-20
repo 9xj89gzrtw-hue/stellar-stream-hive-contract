@@ -127,3 +127,6 @@ stream type.
 
 <!-- handsoff-issue-47 -->
 - #47: Test: several partial withdrawals add up to exactly `total_amount`
+
+<!-- handsoff-issue-48 -->
+- #48: Test: unknown sender/recipient addresses return empty lists and zero counts
