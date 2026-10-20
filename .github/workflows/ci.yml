@@ -60,3 +60,15 @@ jobs:
             -p stellar-stream-hive-vault \
             -p stellar-stream-hive-stream \
             -p stellar-stream-hive-registry
+      - name: Report WASM sizes
+        run: |
+          WASM_DIR="target/wasm32v1-none/release"
+          {
+            echo "### WASM artifact sizes"
+            echo
+            echo "| Contract | Size (bytes) |"
+            echo "|---|---|"
+            for f in stellar_stream_hive_vault stellar_stream_hive_stream stellar_stream_hive_registry; do
+              echo "| $f.wasm | $(stat -c%s "$WASM_DIR/$f.wasm") |"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
