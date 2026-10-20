@@ -124,3 +124,6 @@ stream type.
 
 <!-- handsoff-issue-50 -->
 - #50: Test: `get_streams_by_sender` returns the live (derived) status
+
+<!-- handsoff-issue-51 -->
+- #51: Test: a `start_ledger` in the past is accepted (pin current behaviour)
