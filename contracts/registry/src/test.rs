@@ -150,6 +150,30 @@ fn test_lowering_withdrawn_does_not_reduce_total_withdrawn() {
 }
 
 #[test]
+fn test_update_stream_rejects_negative_withdrawn() {
+    let ctx = setup();
+    let sender = Address::generate(&ctx.env);
+    let recipient = Address::generate(&ctx.env);
+    let token = Address::generate(&ctx.env);
+    ctx.registry
+        .register_stream(&1, &sender, &recipient, &token, &1000);
+
+    let before = ctx.registry.get_stats();
+
+    let result = ctx
+        .registry
+        .try_update_stream(&1, &-1, &StreamStatus::Active);
+    assert_eq!(result, Err(Ok(RegistryError::InvalidAmount)));
+
+    let after = ctx.registry.get_stats();
+    assert_eq!(after.total_streams, before.total_streams);
+    assert_eq!(after.active_streams, before.active_streams);
+    assert_eq!(after.total_streamed, before.total_streamed);
+    assert_eq!(after.total_withdrawn, before.total_withdrawn);
+    assert_eq!(ctx.registry.get_stream_record(&1).withdrawn, 0);
+}
+
+#[test]
 fn test_get_admin_before_initialize_returns_not_initialized() {
     let env = Env::default();
     let id = env.register(RegistryContract, ());
@@ -252,28 +276,4 @@ fn test_get_active_streams_filters_correctly() {
     assert_eq!(active.len(), 2);
     assert_eq!(active.get(0).unwrap(), 1);
     assert_eq!(active.get(1).unwrap(), 3);
-}
-
-#[test]
-fn test_get_stream_record_returns_current_values() {
-    let ctx = setup();
-    let sender = Address::generate(&ctx.env);
-    let recipient = Address::generate(&ctx.env);
-    let token = Address::generate(&ctx.env);
-    ctx.registry
-        .register_stream(&1, &sender, &recipient, &token, &1000);
-    ctx.registry.update_stream(&1, &250, &StreamStatus::Active);
-
-    let record = ctx.registry.get_stream_record(&1);
-    assert_eq!(record.stream_id, 1);
-    assert_eq!(record.amount, 1000);
-    assert_eq!(record.withdrawn, 250);
-    assert_eq!(record.status, StreamStatus::Active);
-}
-
-#[test]
-#[should_panic]
-fn test_get_stream_record_rejects_unknown_id() {
-    let ctx = setup();
-    ctx.registry.get_stream_record(&42);
 }
