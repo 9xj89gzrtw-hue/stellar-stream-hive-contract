@@ -9,3 +9,13 @@ deployments/*.bak
 *.swp
 .vscode/
 .idea/
+# Editor and OS noise
+*.orig
+*.rej
+*~
+Thumbs.db
+# Environment / secrets
+.env
+.env.*
+# Soroban / Stellar CLI artefacts
+.stellar/
