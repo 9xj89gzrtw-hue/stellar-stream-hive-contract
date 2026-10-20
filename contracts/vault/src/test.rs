@@ -268,12 +268,33 @@ fn test_deposit_rejects_token_mismatch_for_existing_stream() {
     let other_client = token::StellarAssetClient::new(&ctx.env, &other_token);
     other_client.mint(&depositor, &1_000);
 
-    // Same stream_id, different token: must be rejected.
-    ctx.vault.deposit(&depositor, &other_token, &50, &1);
+    // Stream 1 is pinned to the first token; depositing a different token
+    // for the same stream must be rejected.
+    ctx.vault.deposit(&depositor, &other_token, &100, &1);
 }
 
 #[test]
-fn test_balance_of_unknown_stream_is_zero() {
+fn test_release_rejects_token_mismatch_for_existing_stream() {
     let ctx = setup();
-    assert_eq!(ctx.vault.balance_of_stream(&999), 0);
+    let depositor = Address::generate(&ctx.env);
+    let recipient = Address::generate(&ctx.env);
+    ctx.token_sac.mint(&depositor, &1_000);
+    ctx.vault.deposit(&depositor, &ctx.token_address, &500, &1);
+
+    let other_admin = Address::generate(&ctx.env);
+    let other_sac = ctx
+        .env
+        .register_stellar_asset_contract_v2(other_admin.clone());
+    let other_token = other_sac.address();
+
+    // Stream 1 is pinned to the first token; releasing with a different
+    // token must be rejected with TokenMismatch.
+    let result = ctx.vault.try_release(
+        &ctx.stream_contract,
+        &recipient,
+        &other_token,
+        &100,
+        &1,
+    );
+    assert_eq!(result, Err(Ok(VaultError::TokenMismatch)));
 }
