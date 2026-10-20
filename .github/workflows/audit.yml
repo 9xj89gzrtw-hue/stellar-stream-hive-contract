@@ -1,0 +1,24 @@
+name: Security audit
+
+on:
+  pull_request:
+    branches: [main]
+  schedule:
+    # Catches newly published advisories against dependencies that haven't
+    # changed since the last PR.
+    - cron: '0 6 * * 1'
+
+jobs:
+  audit:
+    name: cargo audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      # Ignored advisories (acknowledged false positives / accepted risk)
+      # live in audit.toml — see CONTRIBUTING.md's "Dependency audits"
+      # section for how to add one.
+      - name: cargo audit
+        run: cargo audit

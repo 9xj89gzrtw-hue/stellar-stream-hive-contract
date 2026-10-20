@@ -61,6 +61,19 @@ that gets deployed, and `#![no_std]` + Soroban SDK code can behave (or
 fail to compile) subtly differently under the WASM target than under your
 native host target. Always check both before calling something finished.
 
+## Dependency audits
+
+`cargo audit` runs on every pull request and weekly on a schedule
+(`.github/workflows/audit.yml`), checking the dependency tree against the
+RustSec advisory database.
+
+If it flags an advisory that doesn't apply here, acknowledge it explicitly
+rather than letting the job stay red: add the advisory id (e.g.
+`RUSTSEC-0000-0000`) to the `ignore` list in `audit.toml`, with a one-line
+comment explaining why it doesn't apply and, if there is one, a link to an
+upstream issue tracking a real fix. Never disable or remove the audit job to
+make a failure go away.
+
 ## The streaming math, explained
 
 Every stream accrues linearly between `start_ledger` and `end_ledger`:
