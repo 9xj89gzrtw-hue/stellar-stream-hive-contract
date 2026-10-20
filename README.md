@@ -116,3 +116,8 @@ stream type.
 ## License
 
 [MIT](LICENSE)
+
+## Handsoff notes
+
+<!-- handsoff-issue-45 -->
+- #45: Test: a one-ledger stream accrues the full amount at `start + 1`
