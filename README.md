@@ -121,3 +121,6 @@ stream type.
 
 <!-- handsoff-issue-49 -->
 - #49: Test: a page `limit` of 0 returns an empty page
+
+<!-- handsoff-issue-50 -->
+- #50: Test: `get_streams_by_sender` returns the live (derived) status
