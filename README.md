@@ -124,3 +124,6 @@ stream type.
 
 <!-- handsoff-issue-46 -->
 - #46: Test: withdrawing exactly the withdrawable amount succeeds, +1 fails
+
+<!-- handsoff-issue-47 -->
+- #47: Test: several partial withdrawals add up to exactly `total_amount`
