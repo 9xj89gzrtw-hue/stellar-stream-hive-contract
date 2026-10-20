@@ -127,3 +127,6 @@ stream type.
 
 <!-- handsoff-issue-51 -->
 - #51: Test: a `start_ledger` in the past is accepted (pin current behaviour)
+
+<!-- handsoff-issue-52 -->
+- #52: Test: a fully drained stream leaves the vault balance at zero
