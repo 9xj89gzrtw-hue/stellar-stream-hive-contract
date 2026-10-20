@@ -277,3 +277,185 @@ fn test_balance_of_unknown_stream_is_zero() {
     let ctx = setup();
     assert_eq!(ctx.vault.balance_of_stream(&999), 0);
 }
+
+#[test]
+fn test_refund_with_wrong_token_returns_token_mismatch() {
+    use soroban_sdk::testutils::Events as _;
+
+    let ctx = setup();
+    let depositor = Address::generate(&ctx.env);
+    let sender = Address::generate(&ctx.env);
+    ctx.token_sac.mint(&depositor, &1_000);
+    ctx.vault.deposit(&depositor, &ctx.token_address, &500, &1);
+
+    let other_admin = Address::generate(&ctx.env);
+    let other_sac = ctx
+        .env
+        .register_stellar_asset_contract_v2(other_admin.clone());
+    let other_token = other_sac.address();
+    let other_token_client = token::Client::new(&ctx.env, &other_token);
+
+    let result = ctx.vault.try_refund(
+        &ctx.stream_contract,
+        &sender,
+        &other_token,
+        &100,
+        &1,
+    );
+    assert_eq!(result, Err(Ok(VaultError::TokenMismatch)));
+    assert!(ctx.env.events().all().events().is_empty());
+
+    assert_eq!(ctx.token.balance(&depositor), 500);
+    assert_eq!(ctx.token.balance(&sender), 0);
+    assert_eq!(ctx.token.balance(&ctx.vault.address), 500);
+    assert_eq!(other_token_client.balance(&sender), 0);
+    assert_eq!(ctx.vault.balance_of_stream(&1), 500);
+    assert_eq!(ctx.vault.total_locked(&ctx.token_address), 500);
+    assert_eq!(ctx.vault.total_locked(&other_token), 0);
+}
+
+#[test]
+fn test_release_before_initialize_returns_not_initialized() {
+    use soroban_sdk::testutils::Events as _;
+
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let caller = Address::generate(&env);
+    let depositor = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let token_admin = Address::generate(&env);
+
+    let sac = env.register_stellar_asset_contract_v2(token_admin);
+    let token_address = sac.address();
+    let token_sac = token::StellarAssetClient::new(&env, &token_address);
+    let token_client = token::Client::new(&env, &token_address);
+    token_sac.mint(&depositor, &1_000);
+
+    let vault_id = env.register(VaultContract, ());
+    let vault = VaultContractClient::new(&env, &vault_id);
+
+    vault.deposit(&depositor, &token_address, &400, &1);
+
+    let result = vault.try_release(&caller, &recipient, &token_address, &100, &1);
+    assert_eq!(result, Err(Ok(VaultError::NotInitialized)));
+    assert!(env.events().all().events().is_empty());
+
+    assert_eq!(token_client.balance(&depositor), 600);
+    assert_eq!(token_client.balance(&recipient), 0);
+    assert_eq!(token_client.balance(&vault.address), 400);
+    assert_eq!(vault.balance_of_stream(&1), 400);
+    assert_eq!(vault.total_locked(&token_address), 400);
+}
+
+#[test]
+fn test_set_stream_contract_emits_event_with_new_address() {
+    use crate::events;
+    use soroban_sdk::{testutils::Events as _, Event as _};
+
+    let ctx = setup();
+    let new_stream_contract = Address::generate(&ctx.env);
+
+    ctx.vault
+        .set_stream_contract(&ctx.admin, &new_stream_contract);
+
+    let emitted = ctx.env.events().all();
+    assert_eq!(
+        emitted.filter_by_contract(&ctx.vault.address),
+        [events::SetStreamContract {
+            new_contract: new_stream_contract.clone(),
+        }
+        .to_xdr(&ctx.env, &ctx.vault.address)],
+    );
+    assert_eq!(ctx.vault.get_stream_contract(), new_stream_contract);
+}
+
+#[test]
+fn test_deposits_from_different_senders_for_same_stream_accumulate() {
+    use crate::events;
+    use soroban_sdk::{testutils::Events as _, Event as _};
+
+    let ctx = setup();
+    let sender_a = Address::generate(&ctx.env);
+    let sender_b = Address::generate(&ctx.env);
+    let recipient = Address::generate(&ctx.env);
+    ctx.token_sac.mint(&sender_a, &1_000);
+    ctx.token_sac.mint(&sender_b, &1_000);
+
+    ctx.vault.deposit(&sender_a, &ctx.token_address, &350, &42);
+    let events_a = ctx.env.events().all();
+    assert_eq!(
+        events_a.filter_by_contract(&ctx.vault.address),
+        [events::Deposit {
+            stream_id: 42,
+            from: sender_a.clone(),
+            token: ctx.token_address.clone(),
+            amount: 350,
+        }
+        .to_xdr(&ctx.env, &ctx.vault.address)],
+    );
+
+    ctx.vault.deposit(&sender_b, &ctx.token_address, &250, &42);
+    let events_b = ctx.env.events().all();
+    assert_eq!(
+        events_b.filter_by_contract(&ctx.vault.address),
+        [events::Deposit {
+            stream_id: 42,
+            from: sender_b.clone(),
+            token: ctx.token_address.clone(),
+            amount: 250,
+        }
+        .to_xdr(&ctx.env, &ctx.vault.address)],
+    );
+
+    assert_eq!(ctx.vault.balance_of_stream(&42), 600);
+    assert_eq!(ctx.vault.total_locked(&ctx.token_address), 600);
+    assert_eq!(ctx.token.balance(&sender_a), 650);
+    assert_eq!(ctx.token.balance(&sender_b), 750);
+    assert_eq!(ctx.token.balance(&ctx.vault.address), 600);
+
+    ctx.vault.release(
+        &ctx.stream_contract,
+        &recipient,
+        &ctx.token_address,
+        &400,
+        &42,
+    );
+    let release_events = ctx.env.events().all();
+    assert_eq!(
+        release_events.filter_by_contract(&ctx.vault.address),
+        [events::Release {
+            stream_id: 42,
+            to: recipient.clone(),
+            token: ctx.token_address.clone(),
+            amount: 400,
+        }
+        .to_xdr(&ctx.env, &ctx.vault.address)],
+    );
+
+    ctx.vault.refund(
+        &ctx.stream_contract,
+        &sender_a,
+        &ctx.token_address,
+        &200,
+        &42,
+    );
+    let refund_events = ctx.env.events().all();
+    assert_eq!(
+        refund_events.filter_by_contract(&ctx.vault.address),
+        [events::Refund {
+            stream_id: 42,
+            to: sender_a.clone(),
+            token: ctx.token_address.clone(),
+            amount: 200,
+        }
+        .to_xdr(&ctx.env, &ctx.vault.address)],
+    );
+
+    assert_eq!(ctx.vault.balance_of_stream(&42), 0);
+    assert_eq!(ctx.vault.total_locked(&ctx.token_address), 0);
+    assert_eq!(ctx.token.balance(&recipient), 400);
+    assert_eq!(ctx.token.balance(&sender_a), 850);
+    assert_eq!(ctx.token.balance(&sender_b), 750);
+    assert_eq!(ctx.token.balance(&ctx.vault.address), 0);
+}
