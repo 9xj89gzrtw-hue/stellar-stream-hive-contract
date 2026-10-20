@@ -463,3 +463,18 @@ fn register_n(ctx: &TestCtx, n: u64) {
             .register_stream(&(100 + i), &sender, &recipient, &token, &1000);
     }
 }
+
+#[test]
+fn test_register_stream_rejects_negative_amount_and_keeps_stats_unchanged() {
+    let ctx = setup();
+    let sender = Address::generate(&ctx.env);
+    let recipient = Address::generate(&ctx.env);
+    let token = Address::generate(&ctx.env);
+
+    let before = ctx.registry.get_stats();
+    let res = ctx
+        .registry
+        .try_register_stream(&1, &sender, &recipient, &token, &-1);
+    assert_eq!(res, Err(Ok(RegistryError::InvalidAmount)));
+    assert_eq!(ctx.registry.get_stats(), before);
+}

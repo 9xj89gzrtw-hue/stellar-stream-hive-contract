@@ -256,6 +256,20 @@ fn test_withdraw_max_pulls_entire_withdrawable_balance() {
 }
 
 #[test]
+fn test_withdrawing_full_balance_at_end_leaves_zero_locked() {
+    let ctx = setup();
+    let id = create_default_stream(&ctx, true);
+    set_ledger(&ctx, END);
+
+    ctx.stream.withdraw(&ctx.recipient, &id, &AMOUNT);
+
+    assert_eq!(ctx.vault.balance_of_stream(&id), 0);
+    assert_eq!(ctx.token.balance(&ctx.vault.address), 0);
+    assert_eq!(ctx.token.balance(&ctx.recipient), AMOUNT);
+    assert_eq!(ctx.stream.withdrawable_amount(&id), 0);
+}
+
+#[test]
 fn test_cancel_splits_funds_between_recipient_and_sender() {
     let ctx = setup();
     let id = create_default_stream(&ctx, true);
