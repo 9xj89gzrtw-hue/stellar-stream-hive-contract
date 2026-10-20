@@ -116,3 +116,8 @@ stream type.
 ## License
 
 [MIT](LICENSE)
+
+## Handsoff notes
+
+<!-- handsoff-issue-49 -->
+- #49: Test: a page `limit` of 0 returns an empty page
