@@ -121,3 +121,6 @@ stream type.
 
 <!-- handsoff-issue-45 -->
 - #45: Test: a one-ledger stream accrues the full amount at `start + 1`
+
+<!-- handsoff-issue-46 -->
+- #46: Test: withdrawing exactly the withdrawable amount succeeds, +1 fails
