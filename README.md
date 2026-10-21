@@ -116,3 +116,17 @@ stream type.
 ## License
 
 [MIT](LICENSE)
+
+## Handsoff notes
+
+<!-- handsoff-issue-45 -->
+- #45: Test: a one-ledger stream accrues the full amount at `start + 1`
+
+<!-- handsoff-issue-46 -->
+- #46: Test: withdrawing exactly the withdrawable amount succeeds, +1 fails
+
+<!-- handsoff-issue-47 -->
+- #47: Test: several partial withdrawals add up to exactly `total_amount`
+
+<!-- handsoff-issue-48 -->
+- #48: Test: unknown sender/recipient addresses return empty lists and zero counts
