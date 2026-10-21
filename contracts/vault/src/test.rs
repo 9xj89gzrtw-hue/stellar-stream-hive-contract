@@ -659,3 +659,78 @@ fn test_deposits_from_different_senders_for_same_stream_accumulate() {
     assert_eq!(ctx.token.balance(&sender_b), 750);
     assert_eq!(ctx.token.balance(&ctx.vault.address), 0);
 }
+
+#[test]
+fn test_deposit_rejects_negative_amount() {
+    let ctx = setup();
+    let depositor = Address::generate(&ctx.env);
+    ctx.token_sac.mint(&depositor, &1_000);
+
+    let result = ctx
+        .vault
+        .try_deposit(&depositor, &ctx.token_address, &-1, &1);
+    assert_eq!(result, Err(Ok(VaultError::InvalidAmount)));
+    assert_eq!(ctx.vault.balance_of_stream(&1), 0);
+    assert_eq!(ctx.vault.total_locked(&ctx.token_address), 0);
+    assert_eq!(ctx.token.balance(&ctx.vault.address), 0);
+    assert_eq!(ctx.token.balance(&depositor), 1_000);
+}
+
+#[test]
+fn test_set_stream_contract_before_initialize_returns_not_initialized() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let new_contract = Address::generate(&env);
+    let vault_id = env.register(VaultContract, ());
+    let vault = VaultContractClient::new(&env, &vault_id);
+
+    let result = vault.try_set_stream_contract(&admin, &new_contract);
+    assert_eq!(result, Err(Ok(VaultError::NotInitialized)));
+}
+
+#[test]
+fn test_get_admin_and_get_stream_contract_fail_before_initialize() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let vault_id = env.register(VaultContract, ());
+    let vault = VaultContractClient::new(&env, &vault_id);
+
+    assert_eq!(vault.try_get_admin(), Err(Ok(VaultError::NotInitialized)));
+    let stream_contract = vault.try_get_stream_contract();
+    assert_eq!(stream_contract, Err(Ok(VaultError::NotInitialized)));
+}
+
+#[test]
+fn test_releasing_full_balance_leaves_zero_locked() {
+    let ctx = setup();
+    let depositor = Address::generate(&ctx.env);
+    let recipient = Address::generate(&ctx.env);
+    ctx.token_sac.mint(&depositor, &1_000);
+
+    ctx.vault.deposit(&depositor, &ctx.token_address, &500, &1);
+    assert_eq!(ctx.vault.balance_of_stream(&1), 500);
+    assert_eq!(ctx.vault.total_locked(&ctx.token_address), 500);
+
+    ctx.vault.release(
+        &ctx.stream_contract,
+        &recipient,
+        &ctx.token_address,
+        &200,
+        &1,
+    );
+    ctx.vault.release(
+        &ctx.stream_contract,
+        &recipient,
+        &ctx.token_address,
+        &300,
+        &1,
+    );
+
+    assert_eq!(ctx.vault.balance_of_stream(&1), 0);
+    assert_eq!(ctx.vault.total_locked(&ctx.token_address), 0);
+    assert_eq!(ctx.token.balance(&ctx.vault.address), 0);
+    assert_eq!(ctx.token.balance(&recipient), 500);
+}
