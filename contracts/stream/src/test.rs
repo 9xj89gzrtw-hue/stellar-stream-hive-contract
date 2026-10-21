@@ -225,6 +225,19 @@ fn test_withdraw_reduces_withdrawable() {
 }
 
 #[test]
+fn test_withdraw_rejects_zero_amount() {
+    let ctx = setup();
+    let id = create_default_stream(&ctx, true);
+    set_ledger(&ctx, END);
+
+    let result = ctx.stream.try_withdraw(&ctx.recipient, &id, &0);
+
+    assert_eq!(result, Err(Ok(StreamError::InvalidAmount)));
+    assert_eq!(ctx.token.balance(&ctx.recipient), 0);
+    assert_eq!(ctx.stream.withdrawable_amount(&id), AMOUNT);
+}
+
+#[test]
 #[should_panic]
 fn test_withdraw_rejects_amount_exceeding_withdrawable() {
     let ctx = setup();
