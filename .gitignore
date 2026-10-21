@@ -2,6 +2,7 @@
 **/target
 .soroban
 test_snapshots/
+**/test_snapshots/
 *.wasm
 # Backups of earlier deployment records, kept locally by scripts/deploy.sh
 deployments/*.bak
@@ -9,3 +10,14 @@ deployments/*.bak
 *.swp
 .vscode/
 .idea/
+# Editor and OS artifacts
+*.orig
+*.bak
+*~
+.env
+.env.local
+# Stellar CLI local config
+.stellar/
+# Soroban contract artifacts
+*.optimized.wasm
+

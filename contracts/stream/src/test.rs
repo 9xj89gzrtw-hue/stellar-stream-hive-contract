@@ -4,7 +4,7 @@ use crate::types::StreamStatus;
 use crate::{StreamContract, StreamContractClient};
 use soroban_sdk::{
     testutils::{Address as _, Ledger as _},
-    token, Address, Env,
+    token, Address, Env, IntoVal,
 };
 
 /// A minimal stand-in for the real vault contract, used only so the stream
@@ -821,4 +821,100 @@ fn test_value_is_conserved_across_randomized_schedules() {
             "case {case_no}"
         );
     }
+}
+
+// ---------------------------------------------------------------------
+// Issues #37 – #40
+// ---------------------------------------------------------------------
+
+// #37 — initialize twice returns AlreadyInitialized
+#[test]
+fn test_initialize_twice_returns_already_initialized() {
+    let ctx = setup();
+    // Capture the addresses that were set during the first initialize.
+    let original_admin = ctx.stream.get_admin();
+    let original_vault = ctx.stream.get_vault();
+
+    // A second call must be rejected.
+    let result = ctx.stream.try_initialize(&original_admin, &original_vault);
+    assert_eq!(result, Err(Ok(StreamError::AlreadyInitialized)));
+
+    // The stored values must be unchanged.
+    assert_eq!(ctx.stream.get_admin(), original_admin);
+    assert_eq!(ctx.stream.get_vault(), original_vault);
+}
+
+// #38 — create_stream before initialize returns NotInitialized
+#[test]
+fn test_create_stream_before_initialize_returns_not_initialized() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let stream_id = env.register(StreamContract, ());
+    let stream = StreamContractClient::new(&env, &stream_id);
+
+    // The contract has not been initialized — no vault is configured.
+    let sender = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let token = Address::generate(&env);
+
+    let result = stream.try_create_stream(
+        &sender, &recipient, &token, &AMOUNT, &START, &END, &CLIFF, &true,
+    );
+    assert_eq!(result, Err(Ok(StreamError::NotInitialized)));
+}
+
+// #39 — get_admin and get_vault return the configured addresses; both
+//        return NotInitialized before initialize has been called.
+#[test]
+fn test_get_admin_and_get_vault_return_configured_addresses() {
+    let ctx = setup();
+    // After setup() the contract is initialized — verify exact addresses.
+    assert_eq!(ctx.stream.get_admin(), ctx.admin);
+    assert_eq!(ctx.stream.get_vault(), ctx.vault.address);
+}
+
+#[test]
+fn test_get_admin_and_get_vault_return_not_initialized_before_init() {
+    let env = Env::default();
+    let stream_id = env.register(StreamContract, ());
+    let stream = StreamContractClient::new(&env, &stream_id);
+
+    assert_eq!(stream.try_get_admin(), Err(Ok(StreamError::NotInitialized)));
+    assert_eq!(stream.try_get_vault(), Err(Ok(StreamError::NotInitialized)));
+}
+
+// #40 — transfer_admin requires the NEW admin's authorization as well.
+//
+// Strategy: use env.set_auths to issue only the current-admin's
+// authorization entry — omitting the new admin — and assert the call
+// fails.  Then re-enable mock_all_auths and confirm the call succeeds.
+#[test]
+fn test_transfer_admin_requires_new_admin_auth() {
+    use soroban_sdk::testutils::{MockAuth, MockAuthInvoke};
+
+    let ctx = setup();
+    let new_admin = Address::generate(&ctx.env);
+
+    // Authorize only the CURRENT admin; the new admin has not signed.
+    // transfer_admin calls new_admin.require_auth() so this must fail.
+    ctx.env.set_auths(&[MockAuth {
+        address: &ctx.admin,
+        invoke: &MockAuthInvoke {
+            contract: &ctx.stream.address,
+            fn_name: "transfer_admin",
+            args: (new_admin.clone(),).into_val(&ctx.env),
+            sub_invokes: &[],
+        },
+    }
+    .into()]);
+    assert!(ctx.stream.try_transfer_admin(&new_admin).is_err());
+
+    // Admin must still be unchanged.
+    ctx.env.mock_all_auths();
+    assert_eq!(ctx.stream.get_admin(), ctx.admin);
+
+    // Now authorize both — this must succeed.
+    ctx.stream.transfer_admin(&new_admin);
+    assert_eq!(ctx.stream.get_admin(), new_admin);
 }
