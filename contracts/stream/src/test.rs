@@ -256,6 +256,28 @@ fn test_withdraw_max_pulls_entire_withdrawable_balance() {
 }
 
 #[test]
+fn test_withdraw_max_rejects_non_recipient_caller() {
+    let ctx = setup();
+    let id = create_default_stream(&ctx, true);
+    let stranger = Address::generate(&ctx.env);
+
+    assert_eq!(
+        ctx.stream.try_withdraw_max(&stranger, &id),
+        Err(Ok(crate::error::StreamError::Unauthorized)),
+    );
+}
+
+#[test]
+fn test_withdraw_max_unknown_id_returns_stream_not_found() {
+    let ctx = setup();
+
+    assert_eq!(
+        ctx.stream.try_withdraw_max(&ctx.recipient, &999),
+        Err(Ok(crate::error::StreamError::StreamNotFound)),
+    );
+}
+
+#[test]
 fn test_withdrawing_full_balance_at_end_leaves_zero_locked() {
     let ctx = setup();
     let id = create_default_stream(&ctx, true);
