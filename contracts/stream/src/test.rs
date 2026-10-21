@@ -1036,3 +1036,89 @@ fn test_value_is_conserved_across_randomized_schedules() {
         );
     }
 }
+
+// ---------------------------------------------------------------------
+// Cancel edge cases (#29, #30, #31, #32)
+// ---------------------------------------------------------------------
+
+/// #29 — cancel_stream on an unknown stream id returns StreamNotFound.
+#[test]
+fn test_cancel_stream_unknown_id_returns_stream_not_found() {
+    let ctx = setup();
+    set_ledger(&ctx, START + 100);
+    assert_eq!(
+        ctx.stream.try_cancel_stream(&ctx.sender, &999),
+        Err(Ok(StreamError::StreamNotFound)),
+    );
+}
+
+/// #30 — cancelling an already-cancelled stream returns AlreadyFinalized.
+#[test]
+fn test_cancel_stream_twice_returns_already_finalized() {
+    let ctx = setup();
+    let id = create_default_stream(&ctx, true);
+    let midpoint = START + (END - START) / 2;
+    set_ledger(&ctx, midpoint);
+
+    // First cancel — must succeed.
+    ctx.stream.cancel_stream(&ctx.sender, &id);
+
+    // Second cancel — must return AlreadyFinalized; no extra refund.
+    let sender_balance_after_first = ctx.token.balance(&ctx.sender);
+    assert_eq!(
+        ctx.stream.try_cancel_stream(&ctx.sender, &id),
+        Err(Ok(StreamError::AlreadyFinalized)),
+    );
+    // Sender balance unchanged by the failed second cancel.
+    assert_eq!(ctx.token.balance(&ctx.sender), sender_balance_after_first);
+}
+
+/// #31 — after a cancel the recipient can still withdraw the frozen share.
+#[test]
+fn test_recipient_can_withdraw_frozen_share_after_cancel() {
+    let ctx = setup();
+    let id = create_default_stream(&ctx, true);
+    let midpoint = START + (END - START) / 2;
+    set_ledger(&ctx, midpoint);
+
+    // Cancel at midpoint — half is frozen for the recipient.
+    ctx.stream.cancel_stream(&ctx.sender, &id);
+    let frozen = ctx.stream.streamed_amount(&id); // AMOUNT / 2
+    assert_eq!(frozen, AMOUNT / 2);
+
+    // Advance ledger well past END; frozen share must not change.
+    set_ledger(&ctx, END + 1_000);
+    assert_eq!(ctx.stream.withdrawable_amount(&id), frozen);
+
+    // Recipient withdraws the full frozen share.
+    let withdrawn = ctx.stream.withdraw_max(&ctx.recipient, &id);
+    assert_eq!(withdrawn, frozen);
+    assert_eq!(ctx.token.balance(&ctx.recipient), frozen);
+
+    // Vault balance for this stream must now be zero.
+    assert_eq!(ctx.vault.balance_of_stream(&id), 0);
+}
+
+/// #32 — after a cancel, ledger progress cannot raise what the recipient may
+/// withdraw; attempting to take more than the frozen share returns
+/// ExceedsWithdrawable.
+#[test]
+fn test_recipient_cannot_withdraw_more_than_frozen_share_after_cancel() {
+    let ctx = setup();
+    let id = create_default_stream(&ctx, true);
+    let midpoint = START + (END - START) / 2;
+    set_ledger(&ctx, midpoint);
+
+    ctx.stream.cancel_stream(&ctx.sender, &id);
+    let frozen = ctx.stream.streamed_amount(&id); // AMOUNT / 2
+
+    // Move far past END — withdrawable must stay at `frozen`.
+    set_ledger(&ctx, END + 100_000);
+    assert_eq!(ctx.stream.withdrawable_amount(&id), frozen);
+
+    // Trying to withdraw frozen + 1 must fail with ExceedsWithdrawable.
+    assert_eq!(
+        ctx.stream.try_withdraw(&ctx.recipient, &id, &(frozen + 1)),
+        Err(Ok(StreamError::ExceedsWithdrawable)),
+    );
+}
