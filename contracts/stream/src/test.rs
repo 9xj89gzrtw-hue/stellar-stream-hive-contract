@@ -235,13 +235,13 @@ fn test_withdraw_rejects_amount_exceeding_withdrawable() {
 }
 
 #[test]
-#[should_panic]
 fn test_withdraw_rejects_non_recipient_caller() {
     let ctx = setup();
     let id = create_default_stream(&ctx, true);
     set_ledger(&ctx, END);
     let stranger = Address::generate(&ctx.env);
-    ctx.stream.withdraw(&stranger, &id, &1);
+    let result = ctx.stream.try_withdraw(&stranger, &id, &1);
+    assert_eq!(result, Err(Ok(StreamError::Unauthorized)));
 }
 
 #[test]
