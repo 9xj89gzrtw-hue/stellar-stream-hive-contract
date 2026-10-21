@@ -1,0 +1,10 @@
+# Configuration for `cargo audit` (run in .github/workflows/audit.yml).
+#
+# To acknowledge a false positive or an accepted risk, add the advisory id
+# below with a one-line comment explaining why it doesn't apply here (and a
+# link to an upstream fix-tracking issue if one exists). See CONTRIBUTING.md's
+# "Dependency audits" section.
+[advisories]
+ignore = [
+    # "RUSTSEC-0000-0000", # why this doesn't apply, link to tracking issue
+]

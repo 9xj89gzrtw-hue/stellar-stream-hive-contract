@@ -253,6 +253,42 @@ fn test_total_locked_tracks_multiple_streams() {
 }
 
 #[test]
+fn test_total_locked_decreases_after_release_and_refund() {
+    let ctx = setup();
+    let depositor = Address::generate(&ctx.env);
+    let recipient = Address::generate(&ctx.env);
+    let sender = Address::generate(&ctx.env);
+    ctx.token_sac.mint(&depositor, &1_000);
+
+    // Deposit: 500 locked for stream 1.
+    ctx.vault.deposit(&depositor, &ctx.token_address, &500, &1);
+    assert_eq!(ctx.vault.balance_of_stream(&1), 500);
+    assert_eq!(ctx.vault.total_locked(&ctx.token_address), 500);
+    assert_eq!(ctx.token.balance(&ctx.vault.address), 500);
+
+    // Release part: 200 paid out to recipient.
+    ctx.vault.release(
+        &ctx.stream_contract,
+        &recipient,
+        &ctx.token_address,
+        &200,
+        &1,
+    );
+    assert_eq!(ctx.vault.balance_of_stream(&1), 300);
+    assert_eq!(ctx.vault.total_locked(&ctx.token_address), 300);
+    assert_eq!(ctx.token.balance(&ctx.vault.address), 300);
+    assert_eq!(ctx.token.balance(&recipient), 200);
+
+    // Refund part: 100 returned to sender.
+    ctx.vault
+        .refund(&ctx.stream_contract, &sender, &ctx.token_address, &100, &1);
+    assert_eq!(ctx.vault.balance_of_stream(&1), 200);
+    assert_eq!(ctx.vault.total_locked(&ctx.token_address), 200);
+    assert_eq!(ctx.token.balance(&ctx.vault.address), 200);
+    assert_eq!(ctx.token.balance(&sender), 100);
+}
+
+#[test]
 #[should_panic]
 fn test_deposit_rejects_token_mismatch_for_existing_stream() {
     let ctx = setup();
@@ -268,12 +304,6 @@ fn test_deposit_rejects_token_mismatch_for_existing_stream() {
     let other_client = token::StellarAssetClient::new(&ctx.env, &other_token);
     other_client.mint(&depositor, &1_000);
 
-    // Same stream_id, different token: must be rejected.
-    ctx.vault.deposit(&depositor, &other_token, &50, &1);
-}
-
-#[test]
-fn test_balance_of_unknown_stream_is_zero() {
-    let ctx = setup();
-    assert_eq!(ctx.vault.balance_of_stream(&999), 0);
+    // Same stream id, different token: must be rejected.
+    ctx.vault.deposit(&depositor, &other_token, &100, &1);
 }

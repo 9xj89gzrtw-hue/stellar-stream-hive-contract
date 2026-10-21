@@ -119,14 +119,14 @@ stream type.
 
 ## Handsoff notes
 
-<!-- handsoff-issue-49 -->
-- #49: Test: a page `limit` of 0 returns an empty page
+<!-- handsoff-issue-45 -->
+- #45: Test: a one-ledger stream accrues the full amount at `start + 1`
 
-<!-- handsoff-issue-50 -->
-- #50: Test: `get_streams_by_sender` returns the live (derived) status
+<!-- handsoff-issue-46 -->
+- #46: Test: withdrawing exactly the withdrawable amount succeeds, +1 fails
 
-<!-- handsoff-issue-51 -->
-- #51: Test: a `start_ledger` in the past is accepted (pin current behaviour)
+<!-- handsoff-issue-47 -->
+- #47: Test: several partial withdrawals add up to exactly `total_amount`
 
-<!-- handsoff-issue-52 -->
-- #52: Test: a fully drained stream leaves the vault balance at zero
+<!-- handsoff-issue-48 -->
+- #48: Test: unknown sender/recipient addresses return empty lists and zero counts
