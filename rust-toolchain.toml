@@ -1,5 +1,5 @@
 [toolchain]
-channel = "stable"
+channel = "1.85.0"
 # soroban-sdk 27.x requires wasm32v1-none (not wasm32-unknown-unknown) on
 # Rust 1.82+: newer rustc enables wasm reference-types/multi-value by
 # default, which the Soroban host environment does not yet support.
