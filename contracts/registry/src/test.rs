@@ -34,10 +34,10 @@ fn test_initialize_sets_empty_stats() {
 }
 
 #[test]
-#[should_panic]
 fn test_initialize_twice_rejected() {
     let ctx = setup();
-    ctx.registry.initialize(&ctx.admin);
+    let result = ctx.registry.try_initialize(&ctx.admin);
+    assert_eq!(result, Err(Ok(RegistryError::AlreadyInitialized)));
 }
 
 #[test]
