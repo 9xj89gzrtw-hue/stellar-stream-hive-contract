@@ -130,3 +130,6 @@ stream type.
 
 <!-- handsoff-issue-48 -->
 - #48: Test: unknown sender/recipient addresses return empty lists and zero counts
+
+<!-- handsoff-issue-28 -->
+- #28: Test: every read function returns `StreamNotFound` for an unknown id
