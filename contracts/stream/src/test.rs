@@ -208,6 +208,30 @@ fn test_withdrawable_zero_before_cliff() {
 }
 
 #[test]
+fn test_withdraw_max_returns_zero_before_cliff() {
+    let ctx = setup();
+    let id = ctx.stream.create_stream(
+        &ctx.sender,
+        &ctx.recipient,
+        &ctx.token_address,
+        &AMOUNT,
+        &START,
+        &END,
+        &(START + 400),
+        &true,
+    );
+    set_ledger(&ctx, START + 200);
+
+    assert!(ctx.stream.streamed_amount(&id) > 0);
+    let amount = ctx.stream.withdraw_max(&ctx.recipient, &id);
+
+    assert_eq!(amount, 0);
+    assert_eq!(ctx.token.balance(&ctx.recipient), 0);
+    assert_eq!(ctx.stream.withdrawable_amount(&id), 0);
+    assert_eq!(ctx.stream.get_stream(&id).withdrawn, 0);
+}
+
+#[test]
 fn test_withdraw_reduces_withdrawable() {
     let ctx = setup();
     let id = create_default_stream(&ctx, true);
