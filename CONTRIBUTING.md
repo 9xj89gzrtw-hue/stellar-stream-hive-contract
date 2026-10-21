@@ -34,6 +34,16 @@ real-time payment streaming. Sister repos:
    cargo build
    ```
 
+## Pinned Rust toolchain
+
+The Rust version is pinned in `rust-toolchain.toml` (and mirrored in
+`.github/workflows/ci.yml`) so that clippy lints and WASM output stay
+reproducible across releases. To bump it, pick a newer stable version that
+builds and passes CI locally (`cargo test --workspace`, `cargo fmt --all --
+--check`, and the clippy command from the `justfile`), then update the
+`channel` in `rust-toolchain.toml` and the matching toolchain version in
+`ci.yml` in the same PR.
+
 ## Build, test, deploy
 
 The `justfile` wraps the commands below: `just test`, `just fmt`, `just lint`, `just wasm`, and
@@ -176,44 +186,6 @@ non-linear curve) without disturbing existing streams:
 being checked, so a failing test is readable from the output alone.
 
 **Typed errors.** Use the generated `try_*` client methods, such as
-`try_create_stream`, when you need to assert on a specific error. They return
-a `Result` that you can compare with `assert_eq!`, for example
-`assert_eq!(try_create(&ctx), Err(StreamError::Paused));`. A plain client call
-that fails panics, so a `#[should_panic]` test can only tell you that something
-failed, not what failed. Use `#[should_panic]` only when the panic itself is
-the behaviour under test.
+`try_create_stream`, when you need to assert on a specific erro
 
-**Setup.** Each crate has a `setup()` helper in its `test.rs` that registers
-the contracts, mints a token, and returns a context struct. Reuse it so each
-test starts from the same known state. Do not hand-build the environment in
-individual tests.
-
-**Checklist for a new public function.** Cover each of these:
-
-1. **Happy path.** The call succeeds and the stored state is what you expect.
-2. **Rejection path with the exact error.** Use `try_*` and assert the specific
-   error variant. Include one case for each authorization or input check the
-   function performs.
-3. **Boundary values.** Test the first and last valid ledger, the cliff ledger,
-   a zero amount, and the largest amount the function accepts. The stream tests
-   use the `START`, `CLIFF` and `END` constants for this.
-4. **Events.** Check that the expected event is emitted, for example with
-   `env.events().all()`, and that it carries the right fields.
-
-Any change to the vault's `release`, `refund`, or `authorize_and_pay` also needs
-a test proving that a caller other than the stream contract is rejected. See
-["The vault's security boundary"](#the-vaults-security-boundary) above.
-
-## Pull requests
-
-- Keep contract logic changes and documentation changes in the same PR
-  when they affect the same behavior — a PR that changes `math.rs` should
-  update `docs/stream.md`'s formula section too.
-- Run `cargo test` and the WASM build (see above) before opening a PR.
-- New public contract functions need tests covering both the happy path
-  and at least one rejection path (bad auth, bad input, or a broken
-  invariant).
-
-## Code of conduct
-
-This project follows the [Code of Conduct](CODE_OF_CONDUCT.md). Report unacceptable behavior through the private reporting link in [SECURITY.md](SECURITY.md).
+/* … truncated 2114 chars — edit only what you need near the top … */
