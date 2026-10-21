@@ -307,3 +307,173 @@ fn test_deposit_rejects_token_mismatch_for_existing_stream() {
     // Same stream id, different token: must be rejected.
     ctx.vault.deposit(&depositor, &other_token, &100, &1);
 }
+
+#[test]
+fn test_release_and_refund_reject_zero_and_negative_amounts() {
+    let ctx = setup();
+    let depositor = Address::generate(&ctx.env);
+    let recipient = Address::generate(&ctx.env);
+    let sender = Address::generate(&ctx.env);
+    ctx.token_sac.mint(&depositor, &1_000);
+    ctx.vault.deposit(&depositor, &ctx.token_address, &500, &1);
+
+    let res_zero_release = ctx.vault.try_release(
+        &ctx.stream_contract,
+        &recipient,
+        &ctx.token_address,
+        &0,
+        &1,
+    );
+    assert_eq!(res_zero_release, Err(Ok(VaultError::InvalidAmount)));
+
+    let res_neg_release = ctx.vault.try_release(
+        &ctx.stream_contract,
+        &recipient,
+        &ctx.token_address,
+        &-1,
+        &1,
+    );
+    assert_eq!(res_neg_release, Err(Ok(VaultError::InvalidAmount)));
+
+    let res_zero_refund = ctx.vault.try_refund(
+        &ctx.stream_contract,
+        &sender,
+        &ctx.token_address,
+        &0,
+        &1,
+    );
+    assert_eq!(res_zero_refund, Err(Ok(VaultError::InvalidAmount)));
+
+    let res_neg_refund = ctx.vault.try_refund(
+        &ctx.stream_contract,
+        &sender,
+        &ctx.token_address,
+        &-1,
+        &1,
+    );
+    assert_eq!(res_neg_refund, Err(Ok(VaultError::InvalidAmount)));
+
+    assert_eq!(ctx.vault.balance_of_stream(&1), 500);
+    assert_eq!(ctx.vault.total_locked(&ctx.token_address), 500);
+}
+
+#[test]
+fn test_refund_rejects_amount_exceeding_balance() {
+    let ctx = setup();
+    let depositor = Address::generate(&ctx.env);
+    let sender = Address::generate(&ctx.env);
+    ctx.token_sac.mint(&depositor, &1_000);
+    ctx.vault.deposit(&depositor, &ctx.token_address, &100, &1);
+
+    let result = ctx.vault.try_refund(
+        &ctx.stream_contract,
+        &sender,
+        &ctx.token_address,
+        &101,
+        &1,
+    );
+    assert_eq!(result, Err(Ok(VaultError::InsufficientBalance)));
+    assert_eq!(ctx.vault.balance_of_stream(&1), 100);
+    assert_eq!(ctx.token.balance(&sender), 0);
+}
+
+#[test]
+fn test_total_locked_is_tracked_per_token() {
+    let ctx = setup();
+    let depositor = Address::generate(&ctx.env);
+    let recipient = Address::generate(&ctx.env);
+    ctx.token_sac.mint(&depositor, &1_000);
+
+    let other_admin = Address::generate(&ctx.env);
+    let other_sac = ctx
+        .env
+        .register_stellar_asset_contract_v2(other_admin.clone());
+    let other_token = other_sac.address();
+    let other_sac_client = token::StellarAssetClient::new(&ctx.env, &other_token);
+    other_sac_client.mint(&depositor, &2_000);
+
+    let unused_admin = Address::generate(&ctx.env);
+    let unused_token = ctx
+        .env
+        .register_stellar_asset_contract_v2(unused_admin)
+        .address();
+
+    ctx.vault.deposit(&depositor, &ctx.token_address, &300, &1);
+    ctx.vault.deposit(&depositor, &other_token, &700, &2);
+
+    assert_eq!(ctx.vault.total_locked(&ctx.token_address), 300);
+    assert_eq!(ctx.vault.total_locked(&other_token), 700);
+    assert_eq!(ctx.vault.total_locked(&unused_token), 0);
+
+    ctx.vault.release(
+        &ctx.stream_contract,
+        &recipient,
+        &ctx.token_address,
+        &100,
+        &1,
+    );
+    ctx.vault
+        .refund(&ctx.stream_contract, &depositor, &other_token, &250, &2);
+
+    assert_eq!(ctx.vault.total_locked(&ctx.token_address), 200);
+    assert_eq!(ctx.vault.total_locked(&other_token), 450);
+    assert_eq!(ctx.vault.total_locked(&unused_token), 0);
+}
+
+#[test]
+fn test_deposit_release_and_refund_emit_events() {
+    use crate::events;
+    use soroban_sdk::{testutils::Events as _, Event as _};
+
+    let ctx = setup();
+    let depositor = Address::generate(&ctx.env);
+    let recipient = Address::generate(&ctx.env);
+    let sender = Address::generate(&ctx.env);
+    ctx.token_sac.mint(&depositor, &1_000);
+
+    ctx.vault.deposit(&depositor, &ctx.token_address, &500, &1);
+    let deposit_events = ctx.env.events().all();
+    assert_eq!(
+        deposit_events.filter_by_contract(&ctx.vault.address),
+        [events::Deposit {
+            stream_id: 1,
+            from: depositor.clone(),
+            token: ctx.token_address.clone(),
+            amount: 500,
+        }
+        .to_xdr(&ctx.env, &ctx.vault.address)],
+    );
+
+    ctx.vault.release(
+        &ctx.stream_contract,
+        &recipient,
+        &ctx.token_address,
+        &200,
+        &1,
+    );
+    let release_events = ctx.env.events().all();
+    assert_eq!(
+        release_events.filter_by_contract(&ctx.vault.address),
+        [events::Release {
+            stream_id: 1,
+            to: recipient.clone(),
+            token: ctx.token_address.clone(),
+            amount: 200,
+        }
+        .to_xdr(&ctx.env, &ctx.vault.address)],
+    );
+
+    ctx.vault
+        .refund(&ctx.stream_contract, &sender, &ctx.token_address, &300, &1);
+    let refund_events = ctx.env.events().all();
+    assert_eq!(
+        refund_events.filter_by_contract(&ctx.vault.address),
+        [events::Refund {
+            stream_id: 1,
+            to: sender.clone(),
+            token: ctx.token_address.clone(),
+            amount: 300,
+        }
+        .to_xdr(&ctx.env, &ctx.vault.address)],
+    );
+}
