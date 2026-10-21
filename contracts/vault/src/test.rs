@@ -52,11 +52,11 @@ fn test_initialize_sets_admin_and_stream_contract() {
 }
 
 #[test]
-#[should_panic]
 fn test_initialize_twice_rejected() {
     let ctx = setup();
-    // Re-initializing must fail (AlreadyInitialized).
-    ctx.vault.initialize(&ctx.admin, &ctx.stream_contract);
+    // Re-initializing must fail with the typed error, not with any panic.
+    let result = ctx.vault.try_initialize(&ctx.admin, &ctx.stream_contract);
+    assert_eq!(result, Err(Ok(VaultError::AlreadyInitialized)));
 }
 
 #[test]
