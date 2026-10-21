@@ -1,0 +1,18 @@
+version: 2
+updates:
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      # soroban-sdk is pinned identically across all three workspace crates
+      # (see workspace.dependencies in Cargo.toml) — bump it everywhere in
+      # one PR instead of three.
+      soroban-sdk:
+        patterns:
+          - "soroban-sdk"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

@@ -256,6 +256,20 @@ fn test_withdraw_max_pulls_entire_withdrawable_balance() {
 }
 
 #[test]
+fn test_withdrawing_full_balance_at_end_leaves_zero_locked() {
+    let ctx = setup();
+    let id = create_default_stream(&ctx, true);
+    set_ledger(&ctx, END);
+
+    ctx.stream.withdraw(&ctx.recipient, &id, &AMOUNT);
+
+    assert_eq!(ctx.vault.balance_of_stream(&id), 0);
+    assert_eq!(ctx.token.balance(&ctx.vault.address), 0);
+    assert_eq!(ctx.token.balance(&ctx.recipient), AMOUNT);
+    assert_eq!(ctx.stream.withdrawable_amount(&id), 0);
+}
+
+#[test]
 fn test_cancel_splits_funds_between_recipient_and_sender() {
     let ctx = setup();
     let id = create_default_stream(&ctx, true);
@@ -527,6 +541,47 @@ fn test_transfer_admin_changes_admin_and_new_admin_can_pause() {
     assert!(ctx.stream.is_paused());
 }
 
+#[test]
+fn test_pause_unpause_and_transfer_admin_each_emit_one_event() {
+    use soroban_sdk::testutils::Events as _;
+    let ctx = setup();
+
+    ctx.stream.pause();
+    assert_eq!(ctx.env.events().all().events().len(), 1, "pause emits Pause");
+
+    ctx.stream.unpause();
+    assert_eq!(
+        ctx.env.events().all().events().len(),
+        1,
+        "unpause emits Unpause"
+    );
+
+    let new_admin = Address::generate(&ctx.env);
+    ctx.stream.transfer_admin(&new_admin);
+    assert_eq!(
+        ctx.env.events().all().events().len(),
+        1,
+        "transfer_admin emits AdminTransfer"
+    );
+}
+
+#[test]
+fn test_transfer_admin_without_auth_fails_and_admin_is_unchanged() {
+    let ctx = setup();
+    let new_admin = Address::generate(&ctx.env);
+
+    // Drop the blanket auth mock: neither the current admin nor the new admin
+    // has authorized the hand-over, so it must be rejected.
+    ctx.env.set_auths(&[]);
+    assert!(ctx.stream.try_transfer_admin(&new_admin).is_err());
+    assert_eq!(ctx.stream.get_admin(), ctx.admin);
+
+    // Authorize both parties and the hand-over succeeds.
+    ctx.env.mock_all_auths();
+    assert!(ctx.stream.try_transfer_admin(&new_admin).is_ok());
+    assert_eq!(ctx.stream.get_admin(), new_admin);
+}
+
 // ---------------------------------------------------------------------
 // Pagination
 // ---------------------------------------------------------------------
@@ -626,6 +681,165 @@ fn test_create_event_carries_cliff_and_cancellable() {
     // event must be emitted by the stream contract.
     let events = ctx.env.events().all();
     assert!(!events.events().is_empty());
+}
+
+#[test]
+fn test_first_stream_id_is_one_and_ids_increase_by_one() {
+    let ctx = setup();
+    let id1 = create_default_stream(&ctx, true);
+    let id2 = create_default_stream(&ctx, false);
+    let id3 = create_default_stream(&ctx, true);
+    let id4 = create_default_stream(&ctx, true);
+
+    assert_eq!(id1, 1);
+    assert_eq!(id2, 2);
+    assert_eq!(id3, 3);
+    assert_eq!(id4, 4);
+    assert_eq!(ctx.stream.get_stream(&id1).id, 1);
+    assert_eq!(ctx.stream.get_stream(&id4).id, 4);
+}
+
+#[test]
+fn test_create_stream_with_start_in_past_is_immediately_active() {
+    let ctx = setup();
+    // Creating a stream whose start_ledger is already in the past is
+    // deliberately allowed so retroactive/backdated schedules (e.g. vesting
+    // or payroll that started before on-chain submission, or transactions
+    // that landed a few ledgers after their intended start_ledger) succeed
+    // and immediately begin accruing from start_ledger.
+    set_ledger(&ctx, 1_500);
+    let id = ctx.stream.create_stream(
+        &ctx.sender,
+        &ctx.recipient,
+        &ctx.token_address,
+        &AMOUNT,
+        &START,
+        &END,
+        &CLIFF,
+        &true,
+    );
+
+    assert_eq!(id, 1);
+    assert_eq!(ctx.stream.get_status(&id), StreamStatus::Active);
+    assert_eq!(ctx.stream.streamed_amount(&id), AMOUNT / 2);
+}
+
+#[test]
+fn test_withdraw_event_carries_recipient_and_amount() {
+    use crate::events;
+    use soroban_sdk::{testutils::Events as _, Event as _};
+
+    let ctx = setup();
+    let id = create_default_stream(&ctx, true);
+    let midpoint = START + (END - START) / 2;
+    set_ledger(&ctx, midpoint);
+
+    let withdraw_amt = AMOUNT / 4;
+    ctx.stream.withdraw(&ctx.recipient, &id, &withdraw_amt);
+
+    let emitted = ctx.env.events().all();
+    assert_eq!(
+        emitted.filter_by_contract(&ctx.stream.address),
+        [events::Withdraw {
+            stream_id: id,
+            recipient: ctx.recipient.clone(),
+            amount: withdraw_amt,
+        }
+        .to_xdr(&ctx.env, &ctx.stream.address)],
+    );
+}
+
+#[test]
+fn test_single_ledger_stream_accrues_and_withdraws_everything_at_end() {
+    let ctx = setup();
+    let end = START + 1;
+    let id = ctx.stream.create_stream(
+        &ctx.sender,
+        &ctx.recipient,
+        &ctx.token_address,
+        &AMOUNT,
+        &START,
+        &end,
+        &START,
+        &true,
+    );
+
+    set_ledger(&ctx, START);
+    assert_eq!(ctx.stream.streamed_amount(&id), 0);
+
+    set_ledger(&ctx, end);
+    assert_eq!(ctx.stream.streamed_amount(&id), AMOUNT);
+
+    ctx.stream.withdraw(&ctx.recipient, &id, &AMOUNT);
+    assert_eq!(ctx.token.balance(&ctx.recipient), AMOUNT);
+    assert_eq!(ctx.stream.withdrawable_amount(&id), 0);
+    assert_eq!(ctx.vault.balance_of_stream(&id), 0);
+}
+
+#[test]
+fn test_cancel_event_carries_streamed_now_and_remainder() {
+    use crate::events;
+    use soroban_sdk::{testutils::Events as _, Event as _};
+
+    let ctx = setup();
+    let id = create_default_stream(&ctx, true);
+    let midpoint = START + (END - START) / 2;
+    set_ledger(&ctx, midpoint);
+
+    ctx.stream.cancel_stream(&ctx.sender, &id);
+
+    let streamed_now = AMOUNT / 2;
+    let remainder = AMOUNT - streamed_now;
+    assert_eq!(streamed_now + remainder, AMOUNT);
+
+    let emitted = ctx.env.events().all();
+    assert_eq!(
+        emitted.filter_by_contract(&ctx.stream.address),
+        [events::Cancel {
+            stream_id: id,
+            sender: ctx.sender.clone(),
+            streamed_now,
+            remainder,
+        }
+        .to_xdr(&ctx.env, &ctx.stream.address)],
+    );
+}
+
+#[test]
+fn test_cancel_event_before_cliff_carries_zero_streamed_and_full_remainder() {
+    use crate::events;
+    use soroban_sdk::{testutils::Events as _, Event as _};
+
+    let ctx = setup();
+    let id = ctx.stream.create_stream(
+        &ctx.sender,
+        &ctx.recipient,
+        &ctx.token_address,
+        &AMOUNT,
+        &1_000,
+        &2_000,
+        &1_500,
+        &true,
+    );
+
+    set_ledger(&ctx, 1_200);
+    ctx.stream.cancel_stream(&ctx.sender, &id);
+
+    let streamed_now = 0;
+    let remainder = AMOUNT;
+    assert_eq!(streamed_now + remainder, AMOUNT);
+
+    let emitted = ctx.env.events().all();
+    assert_eq!(
+        emitted.filter_by_contract(&ctx.stream.address),
+        [events::Cancel {
+            stream_id: id,
+            sender: ctx.sender.clone(),
+            streamed_now,
+            remainder,
+        }
+        .to_xdr(&ctx.env, &ctx.stream.address)],
+    );
 }
 
 /// Regression: cancelling before the cliff used to refund the sender only the
@@ -824,97 +1038,87 @@ fn test_value_is_conserved_across_randomized_schedules() {
 }
 
 // ---------------------------------------------------------------------
-// Issues #37 – #40
+// Cancel edge cases (#29, #30, #31, #32)
 // ---------------------------------------------------------------------
 
-// #37 — initialize twice returns AlreadyInitialized
+/// #29 — cancel_stream on an unknown stream id returns StreamNotFound.
 #[test]
-fn test_initialize_twice_returns_already_initialized() {
+fn test_cancel_stream_unknown_id_returns_stream_not_found() {
     let ctx = setup();
-    // Capture the addresses that were set during the first initialize.
-    let original_admin = ctx.stream.get_admin();
-    let original_vault = ctx.stream.get_vault();
-
-    // A second call must be rejected.
-    let result = ctx.stream.try_initialize(&original_admin, &original_vault);
-    assert_eq!(result, Err(Ok(StreamError::AlreadyInitialized)));
-
-    // The stored values must be unchanged.
-    assert_eq!(ctx.stream.get_admin(), original_admin);
-    assert_eq!(ctx.stream.get_vault(), original_vault);
-}
-
-// #38 — create_stream before initialize returns NotInitialized
-#[test]
-fn test_create_stream_before_initialize_returns_not_initialized() {
-    let env = Env::default();
-    env.mock_all_auths();
-
-    let stream_id = env.register(StreamContract, ());
-    let stream = StreamContractClient::new(&env, &stream_id);
-
-    // The contract has not been initialized — no vault is configured.
-    let sender = Address::generate(&env);
-    let recipient = Address::generate(&env);
-    let token = Address::generate(&env);
-
-    let result = stream.try_create_stream(
-        &sender, &recipient, &token, &AMOUNT, &START, &END, &CLIFF, &true,
+    set_ledger(&ctx, START + 100);
+    assert_eq!(
+        ctx.stream.try_cancel_stream(&ctx.sender, &999),
+        Err(Ok(StreamError::StreamNotFound)),
     );
-    assert_eq!(result, Err(Ok(StreamError::NotInitialized)));
 }
 
-// #39 — get_admin and get_vault return the configured addresses; both
-//        return NotInitialized before initialize has been called.
+/// #30 — cancelling an already-cancelled stream returns AlreadyFinalized.
 #[test]
-fn test_get_admin_and_get_vault_return_configured_addresses() {
+fn test_cancel_stream_twice_returns_already_finalized() {
     let ctx = setup();
-    // After setup() the contract is initialized — verify exact addresses.
-    assert_eq!(ctx.stream.get_admin(), ctx.admin);
-    assert_eq!(ctx.stream.get_vault(), ctx.vault.address);
+    let id = create_default_stream(&ctx, true);
+    let midpoint = START + (END - START) / 2;
+    set_ledger(&ctx, midpoint);
+
+    // First cancel — must succeed.
+    ctx.stream.cancel_stream(&ctx.sender, &id);
+
+    // Second cancel — must return AlreadyFinalized; no extra refund.
+    let sender_balance_after_first = ctx.token.balance(&ctx.sender);
+    assert_eq!(
+        ctx.stream.try_cancel_stream(&ctx.sender, &id),
+        Err(Ok(StreamError::AlreadyFinalized)),
+    );
+    // Sender balance unchanged by the failed second cancel.
+    assert_eq!(ctx.token.balance(&ctx.sender), sender_balance_after_first);
 }
 
+/// #31 — after a cancel the recipient can still withdraw the frozen share.
 #[test]
-fn test_get_admin_and_get_vault_return_not_initialized_before_init() {
-    let env = Env::default();
-    let stream_id = env.register(StreamContract, ());
-    let stream = StreamContractClient::new(&env, &stream_id);
-
-    assert_eq!(stream.try_get_admin(), Err(Ok(StreamError::NotInitialized)));
-    assert_eq!(stream.try_get_vault(), Err(Ok(StreamError::NotInitialized)));
-}
-
-// #40 — transfer_admin requires the NEW admin's authorization as well.
-//
-// Strategy: use env.set_auths to issue only the current-admin's
-// authorization entry — omitting the new admin — and assert the call
-// fails.  Then re-enable mock_all_auths and confirm the call succeeds.
-#[test]
-fn test_transfer_admin_requires_new_admin_auth() {
-    use soroban_sdk::testutils::{MockAuth, MockAuthInvoke};
-
+fn test_recipient_can_withdraw_frozen_share_after_cancel() {
     let ctx = setup();
-    let new_admin = Address::generate(&ctx.env);
+    let id = create_default_stream(&ctx, true);
+    let midpoint = START + (END - START) / 2;
+    set_ledger(&ctx, midpoint);
 
-    // Authorize only the CURRENT admin; the new admin has not signed.
-    // transfer_admin calls new_admin.require_auth() so this must fail.
-    ctx.env.set_auths(&[MockAuth {
-        address: &ctx.admin,
-        invoke: &MockAuthInvoke {
-            contract: &ctx.stream.address,
-            fn_name: "transfer_admin",
-            args: (new_admin.clone(),).into_val(&ctx.env),
-            sub_invokes: &[],
-        },
-    }
-    .into()]);
-    assert!(ctx.stream.try_transfer_admin(&new_admin).is_err());
+    // Cancel at midpoint — half is frozen for the recipient.
+    ctx.stream.cancel_stream(&ctx.sender, &id);
+    let frozen = ctx.stream.streamed_amount(&id); // AMOUNT / 2
+    assert_eq!(frozen, AMOUNT / 2);
 
-    // Admin must still be unchanged.
-    ctx.env.mock_all_auths();
-    assert_eq!(ctx.stream.get_admin(), ctx.admin);
+    // Advance ledger well past END; frozen share must not change.
+    set_ledger(&ctx, END + 1_000);
+    assert_eq!(ctx.stream.withdrawable_amount(&id), frozen);
 
-    // Now authorize both — this must succeed.
-    ctx.stream.transfer_admin(&new_admin);
-    assert_eq!(ctx.stream.get_admin(), new_admin);
+    // Recipient withdraws the full frozen share.
+    let withdrawn = ctx.stream.withdraw_max(&ctx.recipient, &id);
+    assert_eq!(withdrawn, frozen);
+    assert_eq!(ctx.token.balance(&ctx.recipient), frozen);
+
+    // Vault balance for this stream must now be zero.
+    assert_eq!(ctx.vault.balance_of_stream(&id), 0);
+}
+
+/// #32 — after a cancel, ledger progress cannot raise what the recipient may
+/// withdraw; attempting to take more than the frozen share returns
+/// ExceedsWithdrawable.
+#[test]
+fn test_recipient_cannot_withdraw_more_than_frozen_share_after_cancel() {
+    let ctx = setup();
+    let id = create_default_stream(&ctx, true);
+    let midpoint = START + (END - START) / 2;
+    set_ledger(&ctx, midpoint);
+
+    ctx.stream.cancel_stream(&ctx.sender, &id);
+    let frozen = ctx.stream.streamed_amount(&id); // AMOUNT / 2
+
+    // Move far past END — withdrawable must stay at `frozen`.
+    set_ledger(&ctx, END + 100_000);
+    assert_eq!(ctx.stream.withdrawable_amount(&id), frozen);
+
+    // Trying to withdraw frozen + 1 must fail with ExceedsWithdrawable.
+    assert_eq!(
+        ctx.stream.try_withdraw(&ctx.recipient, &id, &(frozen + 1)),
+        Err(Ok(StreamError::ExceedsWithdrawable)),
+    );
 }

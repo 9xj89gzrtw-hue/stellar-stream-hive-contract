@@ -10,14 +10,13 @@ deployments/*.bak
 *.swp
 .vscode/
 .idea/
-# Editor and OS artifacts
+# Editor and OS noise
 *.orig
-*.bak
+*.rej
 *~
+Thumbs.db
+# Environment / secrets
 .env
-.env.local
-# Stellar CLI local config
+.env.*
+# Soroban / Stellar CLI artefacts
 .stellar/
-# Soroban contract artifacts
-*.optimized.wasm
-
