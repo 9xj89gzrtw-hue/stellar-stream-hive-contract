@@ -541,6 +541,47 @@ fn test_transfer_admin_changes_admin_and_new_admin_can_pause() {
     assert!(ctx.stream.is_paused());
 }
 
+#[test]
+fn test_pause_unpause_and_transfer_admin_each_emit_one_event() {
+    use soroban_sdk::testutils::Events as _;
+    let ctx = setup();
+
+    ctx.stream.pause();
+    assert_eq!(ctx.env.events().all().events().len(), 1, "pause emits Pause");
+
+    ctx.stream.unpause();
+    assert_eq!(
+        ctx.env.events().all().events().len(),
+        1,
+        "unpause emits Unpause"
+    );
+
+    let new_admin = Address::generate(&ctx.env);
+    ctx.stream.transfer_admin(&new_admin);
+    assert_eq!(
+        ctx.env.events().all().events().len(),
+        1,
+        "transfer_admin emits AdminTransfer"
+    );
+}
+
+#[test]
+fn test_transfer_admin_without_auth_fails_and_admin_is_unchanged() {
+    let ctx = setup();
+    let new_admin = Address::generate(&ctx.env);
+
+    // Drop the blanket auth mock: neither the current admin nor the new admin
+    // has authorized the hand-over, so it must be rejected.
+    ctx.env.set_auths(&[]);
+    assert!(ctx.stream.try_transfer_admin(&new_admin).is_err());
+    assert_eq!(ctx.stream.get_admin(), ctx.admin);
+
+    // Authorize both parties and the hand-over succeeds.
+    ctx.env.mock_all_auths();
+    assert!(ctx.stream.try_transfer_admin(&new_admin).is_ok());
+    assert_eq!(ctx.stream.get_admin(), new_admin);
+}
+
 // ---------------------------------------------------------------------
 // Pagination
 // ---------------------------------------------------------------------
