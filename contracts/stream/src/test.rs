@@ -370,12 +370,12 @@ fn test_cancel_freezes_streamed_amount_after_further_ledgers() {
 }
 
 #[test]
-#[should_panic]
 fn test_cancel_rejected_on_non_cancellable_stream() {
     let ctx = setup();
     let id = create_default_stream(&ctx, false);
     set_ledger(&ctx, START + 100);
-    ctx.stream.cancel_stream(&ctx.sender, &id);
+    let result = ctx.stream.try_cancel_stream(&ctx.sender, &id);
+    assert_eq!(result, Err(Ok(StreamError::NotCancellable)));
 }
 
 #[test]
