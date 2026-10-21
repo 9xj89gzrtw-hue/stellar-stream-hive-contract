@@ -1,10 +1,27 @@
+//! Storage layout for this contract.
+//!
+//! Soroban has three storage types. This module uses two:
+//!
+//! - **Instance** storage is a single ledger entry shared by the whole
+//!   contract. It holds small, contract-wide values such as the admin
+//!   address and counters. All instance keys share one TTL, so extending it
+//!   keeps every instance key alive.
+//! - **Persistent** storage has one ledger entry per key. It holds per-record
+//!   data (streams, balances, records, index lists). Each entry has its own
+//!   TTL, so an entry expires independently of the others.
+//!
+//! TTL is measured in ledgers. A write extends an entry's TTL once it is at
+//! or below `LEDGER_THRESHOLD`, and extends it to `LEDGER_BUMP`. Reads do not
+//! extend the TTL, so an entry that is only read still expires on schedule.
+//! The write helpers below extend the TTL of the entry they touch.
+
 use soroban_sdk::{contracttype, Address, Env};
 
-/// Ledgers a persistent storage entry survives without being touched
-/// before it is eligible for archival. Kept generous since streams (and
-/// their vault balances) can legitimately live for a long time.
-const LEDGER_THRESHOLD: u32 = 120_960; // ~7 days at 5s ledgers
-const LEDGER_BUMP: u32 = 241_920; // ~14 days at 5s ledgers
+/// Extend an entry's TTL once it is at or below this many ledgers
+/// (~7 days at 5s ledgers).
+const LEDGER_THRESHOLD: u32 = 120_960;
+/// Extend an entry's TTL to this many ledgers (~14 days at 5s ledgers).
+const LEDGER_BUMP: u32 = 241_920;
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]

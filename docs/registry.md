@@ -77,7 +77,9 @@ A registration-ordered page of ids. `limit` is capped at `MAX_PAGE_SIZE`
 The current aggregate snapshot.
 
 ### `get_active_streams(env) -> Vec<u64>`
-Ids of every stream whose last-known status is `Active`.
+Ids of every stream whose last-known status is `Active`. Like
+`get_all_streams`, it reads one ledger entry per registered stream, so on a
+large registry prefer the paged accessors above.
 
 ### `get_stream_record(env, stream_id) -> StreamRecord`
 Read-only accessor for a single stream's registry-side summary.
@@ -118,6 +120,20 @@ pattern), store an `authorized_writer` address at `initialize`, and reject
 any call where `caller != authorized_writer`. This was left out of v1 to
 keep the function signatures matching the contract's specified interface
 exactly; it is a straightforward, backwards-incompatible follow-up.
+
+## Errors
+
+| Code | Name | Meaning | Returned by |
+|---|---|---|---|
+| 1 | `AlreadyInitialized` | `initialize` called twice | `initialize` |
+| 2 | `NotInitialized` | called before `initialize` | `get_admin` |
+| 3 | `InvalidAmount` | amount argument was negative | `register_stream`, `update_stream` |
+| 4 | `AlreadyRegistered` | `stream_id` was already registered | `register_stream` |
+| 5 | `StreamNotFound` | no stream with that id is registered | `update_stream`, `get_stream_record` |
+| 6 | `MathOverflow` | checked arithmetic overflowed or underflowed | `register_stream`, `update_stream` |
+
+The codes come from `contracts/registry/src/error.rs`. Errors are returned as
+Soroban contract errors, so a client sees the numeric code.
 
 ## Storage layout
 

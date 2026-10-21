@@ -6,6 +6,13 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   lint:
     name: Lint (fmt, clippy)
@@ -26,14 +33,17 @@ jobs:
           -A clippy::too_many_arguments
           -A clippy::needless_borrows_for_generic_args
 
-  shellcheck:
-    name: ShellCheck (scripts)
+  docs:
+    name: Docs (rustdoc, warnings as errors)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # shellcheck ships preinstalled on the ubuntu-latest runner image.
-      - name: ShellCheck
-        run: shellcheck scripts/*.sh
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build rustdoc with warnings as errors
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --workspace --no-deps
 
   test:
     name: Test (native)

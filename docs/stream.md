@@ -110,6 +110,23 @@ that genuinely needs to be persisted, since it can't be reconstructed from
 time alone. `get_stream`, `get_status`, and the `get_streams_by_*`
 functions all recompute the live status on every read.
 
+### Status lifecycle
+
+```mermaid
+stateDiagram-v2
+    [*] --> Pending: create_stream
+    Pending --> Active: ledger reaches start_ledger
+    Active --> Completed: ledger reaches end_ledger
+    Pending --> Cancelled: cancel_stream (cancellable only)
+    Active --> Cancelled: cancel_stream (cancellable only)
+    Completed --> [*]
+    Cancelled --> [*]
+```
+
+`Pending`, `Active` and `Completed` follow the ledger and are never written to
+storage. `Cancelled` is persisted by `cancel_stream`. A stream that has
+`Completed` can no longer be cancelled (`AlreadyFinalized`).
+
 ## Function reference
 
 ### `initialize(env, admin, vault)`
@@ -172,9 +189,35 @@ Read-only, live-computed status.
 `withdraw_max` or `cancel_stream`** -- it is an emergency brake on new
 deposits, not a way to trap funds that are already streaming.
 
+### `get_admin(env) -> Address`
+Read-only. Returns the current admin address. No authorization required.
+Fails with `NotInitialized` if `initialize` has not been called.
+
+### `get_vault(env) -> Address`
+Read-only. Returns the vault contract address set during `initialize`. No
+authorization required. Fails with `NotInitialized` if `initialize` has not
+been called.
+
 ### `transfer_admin(env, new_admin)`
 Requires authorization from **both** the current admin and `new_admin`, so
 the role cannot be handed to an address nobody controls by mistake.
+
+## Roles and permissions
+
+Who may call each function, and what the contract checks before acting. The
+"Enforced in code" column is taken from the `require_auth()` calls and identity
+checks in `contracts/stream/src/lib.rs`.
+
+| Function | Callable by | Enforced in code |
+|---|---|---|
+| [`initialize`](#initializeenv-admin-vault) | Admin, once | `admin.require_auth()`; a second call fails with `AlreadyInitialized` |
+| [`create_stream`](#create_streamenv-sender-recipient-token-total_amount-start_ledger-end_ledger-cliff_ledger-cancellable---u64) | Sender | `sender.require_auth()`; fails with `Paused` while paused |
+| [`withdraw`](#withdrawenv-recipient-stream_id-amount) | Recipient of the stream | `recipient.require_auth()`; `recipient` must equal the stream's `recipient` (`Unauthorized`) |
+| [`withdraw_max`](#withdraw_maxenv-recipient-stream_id---i128) | Recipient of the stream | `recipient` must equal the stream's `recipient` (`Unauthorized`); authorization comes from the delegated `withdraw` call |
+| [`cancel_stream`](#cancel_streamenv-sender-stream_id) | Sender of the stream | `sender.require_auth()`; `sender` must equal the stream's `sender` (`Unauthorized`) |
+| [`pause`](#pauseenv--unpauseenv--is_pausedenv---bool) / `unpause` | Admin | `admin.require_auth()` against the stored admin |
+| [`transfer_admin`](#transfer_adminenv-new_admin) | Current admin and the new admin | `require_auth()` on both addresses |
+| [`streamed_amount`](#streamed_amountenv-stream_id---i128), [`withdrawable_amount`](#withdrawable_amountenv-stream_id---i128), [`get_stream`](#get_streamenv-stream_id---stream), [`get_status`](#get_statusenv-stream_id---streamstatus), [`get_streams_by_sender`](#get_streams_by_senderenv-sender---vecstream--get_streams_by_recipientenv-recipient---vecstream), [`count_streams_by_sender`](#count_streams_by_senderenv-sender---u32--count_streams_by_recipientenv-recipient---u32), [`get_streams_by_sender_page`](#get_streams_by_sender_pageenv-sender-offset-limit---vecstream--get_streams_by_recipient_pageenv-recipient-offset-limit---vecstream), `is_paused`, `get_admin`, `get_vault` | Anyone | Read-only; no authorization |
 
 ## Events
 
@@ -215,7 +258,7 @@ the full deposit → withdraw → release path is tested end-to-end.
 | 5 | `InvalidTimeRange` | `end_ledger <= start_ledger` |
 | 6 | `InvalidCliff` | cliff outside `[start_ledger, end_ledger]` |
 | 7 | `StreamNotFound` | no stream with that id |
-| 8 | `BeforeCliff` | withdrawal before the cliff |
+| 8 | `BeforeCliff` | reserved, currently unused (a withdrawal before the cliff returns `ExceedsWithdrawable`) |
 | 9 | `ExceedsWithdrawable` | amount above `withdrawable_amount` |
 | 10 | `NotCancellable` | stream created with `cancellable = false` |
 | 11 | `AlreadyFinalized` | stream already cancelled or completed |

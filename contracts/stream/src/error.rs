@@ -21,7 +21,10 @@ pub enum StreamError {
     InvalidCliff = 6,
     /// No stream exists with the given id.
     StreamNotFound = 7,
-    /// A withdrawal was attempted before `cliff_ledger`.
+    /// Reserved and currently unused: no code path returns it. A withdrawal
+    /// before `cliff_ledger` fails with `ExceedsWithdrawable`, because
+    /// `withdrawable_amount` is 0 until the cliff. Kept so the error codes
+    /// stay stable; do not renumber or remove it.
     BeforeCliff = 8,
     /// A withdrawal amount exceeds what is currently withdrawable.
     ExceedsWithdrawable = 9,
