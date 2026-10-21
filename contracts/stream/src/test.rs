@@ -642,6 +642,165 @@ fn test_create_event_carries_cliff_and_cancellable() {
     assert!(!events.events().is_empty());
 }
 
+#[test]
+fn test_first_stream_id_is_one_and_ids_increase_by_one() {
+    let ctx = setup();
+    let id1 = create_default_stream(&ctx, true);
+    let id2 = create_default_stream(&ctx, false);
+    let id3 = create_default_stream(&ctx, true);
+    let id4 = create_default_stream(&ctx, true);
+
+    assert_eq!(id1, 1);
+    assert_eq!(id2, 2);
+    assert_eq!(id3, 3);
+    assert_eq!(id4, 4);
+    assert_eq!(ctx.stream.get_stream(&id1).id, 1);
+    assert_eq!(ctx.stream.get_stream(&id4).id, 4);
+}
+
+#[test]
+fn test_create_stream_with_start_in_past_is_immediately_active() {
+    let ctx = setup();
+    // Creating a stream whose start_ledger is already in the past is
+    // deliberately allowed so retroactive/backdated schedules (e.g. vesting
+    // or payroll that started before on-chain submission, or transactions
+    // that landed a few ledgers after their intended start_ledger) succeed
+    // and immediately begin accruing from start_ledger.
+    set_ledger(&ctx, 1_500);
+    let id = ctx.stream.create_stream(
+        &ctx.sender,
+        &ctx.recipient,
+        &ctx.token_address,
+        &AMOUNT,
+        &START,
+        &END,
+        &CLIFF,
+        &true,
+    );
+
+    assert_eq!(id, 1);
+    assert_eq!(ctx.stream.get_status(&id), StreamStatus::Active);
+    assert_eq!(ctx.stream.streamed_amount(&id), AMOUNT / 2);
+}
+
+#[test]
+fn test_withdraw_event_carries_recipient_and_amount() {
+    use crate::events;
+    use soroban_sdk::{testutils::Events as _, Event as _};
+
+    let ctx = setup();
+    let id = create_default_stream(&ctx, true);
+    let midpoint = START + (END - START) / 2;
+    set_ledger(&ctx, midpoint);
+
+    let withdraw_amt = AMOUNT / 4;
+    ctx.stream.withdraw(&ctx.recipient, &id, &withdraw_amt);
+
+    let emitted = ctx.env.events().all();
+    assert_eq!(
+        emitted.filter_by_contract(&ctx.stream.address),
+        [events::Withdraw {
+            stream_id: id,
+            recipient: ctx.recipient.clone(),
+            amount: withdraw_amt,
+        }
+        .to_xdr(&ctx.env, &ctx.stream.address)],
+    );
+}
+
+#[test]
+fn test_single_ledger_stream_accrues_and_withdraws_everything_at_end() {
+    let ctx = setup();
+    let end = START + 1;
+    let id = ctx.stream.create_stream(
+        &ctx.sender,
+        &ctx.recipient,
+        &ctx.token_address,
+        &AMOUNT,
+        &START,
+        &end,
+        &START,
+        &true,
+    );
+
+    set_ledger(&ctx, START);
+    assert_eq!(ctx.stream.streamed_amount(&id), 0);
+
+    set_ledger(&ctx, end);
+    assert_eq!(ctx.stream.streamed_amount(&id), AMOUNT);
+
+    ctx.stream.withdraw(&ctx.recipient, &id, &AMOUNT);
+    assert_eq!(ctx.token.balance(&ctx.recipient), AMOUNT);
+    assert_eq!(ctx.stream.withdrawable_amount(&id), 0);
+    assert_eq!(ctx.vault.balance_of_stream(&id), 0);
+}
+
+#[test]
+fn test_cancel_event_carries_streamed_now_and_remainder() {
+    use crate::events;
+    use soroban_sdk::{testutils::Events as _, Event as _};
+
+    let ctx = setup();
+    let id = create_default_stream(&ctx, true);
+    let midpoint = START + (END - START) / 2;
+    set_ledger(&ctx, midpoint);
+
+    ctx.stream.cancel_stream(&ctx.sender, &id);
+
+    let streamed_now = AMOUNT / 2;
+    let remainder = AMOUNT - streamed_now;
+    assert_eq!(streamed_now + remainder, AMOUNT);
+
+    let emitted = ctx.env.events().all();
+    assert_eq!(
+        emitted.filter_by_contract(&ctx.stream.address),
+        [events::Cancel {
+            stream_id: id,
+            sender: ctx.sender.clone(),
+            streamed_now,
+            remainder,
+        }
+        .to_xdr(&ctx.env, &ctx.stream.address)],
+    );
+}
+
+#[test]
+fn test_cancel_event_before_cliff_carries_zero_streamed_and_full_remainder() {
+    use crate::events;
+    use soroban_sdk::{testutils::Events as _, Event as _};
+
+    let ctx = setup();
+    let id = ctx.stream.create_stream(
+        &ctx.sender,
+        &ctx.recipient,
+        &ctx.token_address,
+        &AMOUNT,
+        &1_000,
+        &2_000,
+        &1_500,
+        &true,
+    );
+
+    set_ledger(&ctx, 1_200);
+    ctx.stream.cancel_stream(&ctx.sender, &id);
+
+    let streamed_now = 0;
+    let remainder = AMOUNT;
+    assert_eq!(streamed_now + remainder, AMOUNT);
+
+    let emitted = ctx.env.events().all();
+    assert_eq!(
+        emitted.filter_by_contract(&ctx.stream.address),
+        [events::Cancel {
+            stream_id: id,
+            sender: ctx.sender.clone(),
+            streamed_now,
+            remainder,
+        }
+        .to_xdr(&ctx.env, &ctx.stream.address)],
+    );
+}
+
 /// Regression: cancelling before the cliff used to refund the sender only the
 /// unstreamed remainder while `withdrawable_amount` returned 0 forever, leaving
 /// the accrued-but-unclaimable part stranded in the vault.
