@@ -4,7 +4,7 @@ use crate::types::StreamStatus;
 use crate::{StreamContract, StreamContractClient};
 use soroban_sdk::{
     testutils::{Address as _, Ledger as _},
-    token, Address, Env,
+    token, Address, Env, IntoVal,
 };
 
 /// A minimal stand-in for the real vault contract, used only so the stream

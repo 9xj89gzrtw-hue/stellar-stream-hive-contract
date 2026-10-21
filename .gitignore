@@ -2,6 +2,7 @@
 **/target
 .soroban
 test_snapshots/
+**/test_snapshots/
 *.wasm
 # Backups of earlier deployment records, kept locally by scripts/deploy.sh
 deployments/*.bak
