@@ -287,6 +287,53 @@ fn test_cancel_splits_funds_between_recipient_and_sender() {
 }
 
 #[test]
+fn test_cancel_after_partial_withdrawal_splits_funds() {
+    let ctx = setup();
+    let id = create_default_stream(&ctx, true);
+
+    // Recipient withdraws a quarter of the accrued amount at START + 250.
+    set_ledger(&ctx, START + 250);
+    ctx.stream.withdraw(&ctx.recipient, &id, &(AMOUNT / 8));
+    assert_eq!(ctx.token.balance(&ctx.recipient), AMOUNT / 8);
+
+    // Cancel at the midpoint: half the total has streamed.
+    let midpoint = START + (END - START) / 2;
+    set_ledger(&ctx, midpoint);
+    ctx.stream.cancel_stream(&ctx.sender, &id);
+
+    // Sender is refunded the unstreamed half (total - streamed).
+    assert_eq!(ctx.token.balance(&ctx.sender), AMOUNT * 9 + AMOUNT / 2);
+    // Recipient can still claim streamed - withdrawn.
+    assert_eq!(
+        ctx.stream.withdrawable_amount(&id),
+        AMOUNT / 2 - AMOUNT / 8
+    );
+
+    ctx.stream.withdraw_max(&ctx.recipient, &id);
+    // Recipient's final balance equals the streamed amount.
+    assert_eq!(ctx.token.balance(&ctx.recipient), AMOUNT / 2);
+    assert_eq!(ctx.vault.balance_of_stream(&id), 0);
+}
+
+#[test]
+fn test_cancel_pending_stream_returns_full_deposit() {
+    let ctx = setup();
+    let balance_before = ctx.token.balance(&ctx.sender);
+
+    // START is in the future relative to ledger 0, so the stream is Pending.
+    let id = create_default_stream(&ctx, true);
+    assert_eq!(ctx.stream.get_status(&id), StreamStatus::Pending);
+
+    set_ledger(&ctx, 0);
+    ctx.stream.cancel_stream(&ctx.sender, &id);
+
+    // The sender is exactly where they began.
+    assert_eq!(ctx.token.balance(&ctx.sender), balance_before);
+    assert_eq!(ctx.vault.balance_of_stream(&id), 0);
+    assert_eq!(ctx.stream.get_status(&id), StreamStatus::Cancelled);
+}
+
+#[test]
 fn test_cancel_freezes_streamed_amount_after_further_ledgers() {
     let ctx = setup();
     let id = create_default_stream(&ctx, true);
